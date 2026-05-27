@@ -145,12 +145,29 @@ final class ToolInvocationService {
         }.joined(separator: "\n")
         let workspace = workspacePath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? "\n当前工作区：\(workspacePath!)。运行 terminal 时默认 cwd 为该目录。" : ""
         return """
-        你可以通过 Easy Chat 工具系统完成任务。严格遵守：
-        - 需要调用工具时，只输出一个 JSON 对象，不要包裹代码块。
-        - JSON 必须包含 tool 字段，并符合对应示例的字段名。
-        - readOnly/web 工具会直接执行；edit/execution/mcp 工具会先请求用户确认。
-        - 工具结果会回传给你；收到结果后继续推理或给出最终答案。
-        - 不要输出 {\"cmd\": ...}，命令必须使用 terminal。
+        你可以通过 Easy Chat 工具系统完成任务。
+
+        ⚠️ 最重要的规则（违反将导致工具无法执行）：
+        当你需要调用工具时，你的整条回复必须只包含 JSON 对象，绝对不能有任何其他文字。
+        不要写"我来帮你…"、"让我…"、"以下是…"等任何自然语言。
+        不要在 JSON 前后添加解释。不要在多个 JSON 之间插入文字。
+        系统只会解析纯 JSON，任何混入的文字都会导致工具调用失败。
+
+        正确示例（整条回复只有这些）：
+        {"tool":"list_files","path":"/path"}{"tool":"read_file","path":"/path/file.txt"}
+
+        错误示例（绝对不要这样做）：
+        我来帮你查看文件：
+        {"tool":"list_files","path":"/path"}
+        接下来我会...
+
+        其他规则：
+        - 可以一次输出多个 JSON 对象（紧挨着），系统会依次执行。
+        - JSON 必须包含 tool 字段。不要包裹在 ``` 代码块中。
+        - readOnly/web 工具直接执行；edit/execution/mcp 工具需用户确认。
+        - 工具结果会回传给你；收到结果后继续调用工具或给出最终答案。
+        - 不要输出 {"cmd": ...}，命令必须使用 terminal 工具。
+        - 只有在不需要调用任何工具、准备给出最终答案时，才输出自然语言。
         \(workspace)
 
         可用工具：
@@ -159,14 +176,17 @@ final class ToolInvocationService {
     }
 
     private func extractJSONObjects(from text: String) -> [String] {
+        // First, remove content inside code blocks (``` ... ``` and ` ... `)
+        let cleaned = removeCodeBlocks(from: text)
+
         var objects: [String] = []
         var startIndex: String.Index?
         var depth = 0
         var isInsideString = false
         var isEscaped = false
 
-        for index in text.indices {
-            let character = text[index]
+        for index in cleaned.indices {
+            let character = cleaned[index]
             if isInsideString {
                 if isEscaped {
                     isEscaped = false
@@ -187,12 +207,34 @@ final class ToolInvocationService {
                 guard depth > 0 else { continue }
                 depth -= 1
                 if depth == 0, let objectStart = startIndex {
-                    let object = String(text[objectStart...index])
+                    let object = String(cleaned[objectStart...index])
                     if object.contains("\"tool\"") || object.contains("\"cmd\"") { objects.append(object) }
                     startIndex = nil
                 }
             }
         }
         return objects
+    }
+
+    private func removeCodeBlocks(from text: String) -> String {
+        var result = text
+        // Remove fenced code blocks (```...```)
+        while let startRange = result.range(of: "```") {
+            if let endRange = result.range(of: "```", range: startRange.upperBound..<result.endIndex) {
+                result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+            } else {
+                // Unclosed fenced block — remove from ``` to end
+                result.removeSubrange(startRange.lowerBound..<result.endIndex)
+            }
+        }
+        // Remove inline code (`...`)
+        while let startRange = result.range(of: "`") {
+            if let endRange = result.range(of: "`", range: startRange.upperBound..<result.endIndex) {
+                result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+            } else {
+                break
+            }
+        }
+        return result
     }
 }

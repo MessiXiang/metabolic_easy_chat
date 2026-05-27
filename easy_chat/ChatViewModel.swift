@@ -30,6 +30,9 @@ final class ChatViewModel: ObservableObject {
     @Published var selectedWorkspaceFilePreview = ""
     @Published var terminals: [WorkspaceTerminalSession] = []
     @Published var selectedTerminalID: WorkspaceTerminalSession.ID?
+    @Published var editingMessageID: ChatMessage.ID?
+    @Published var editingText = ""
+    @Published var streamingText = ""
 
     private var activeSecurityScopedURLs: [URL] = []
     private let terminalService = WorkspaceTerminalService()
@@ -102,6 +105,91 @@ final class ChatViewModel: ObservableObject {
         persistConversations()
     }
 
+    func startEditingMessage(_ message: ChatMessage) {
+        editingMessageID = message.id
+        editingText = message.text
+    }
+
+    func cancelEditing() {
+        editingMessageID = nil
+        editingText = ""
+    }
+
+    func submitEdit() async {
+        guard let messageID = editingMessageID, !isSending else { return }
+        guard let conversationIndex = selectedConversationIndex() else { return }
+        guard let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+
+        let newText = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newText.isEmpty else { return }
+
+        conversations[conversationIndex].messages[messageIndex].text = newText
+        if messageIndex + 1 < conversations[conversationIndex].messages.endIndex {
+            conversations[conversationIndex].messages.removeSubrange((messageIndex + 1)...)
+        }
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
+
+        editingMessageID = nil
+        editingText = ""
+
+        let context = Array(conversations[conversationIndex].messages.prefix(messageIndex + 1))
+        startAssistantResponse(context: context, imagePrompt: newText)
+    }
+
+    func sendWorkspaceFile(_ item: WorkspaceFileItem) {
+        guard !item.isDirectory else { return }
+        addFileAttachment(from: item.url)
+    }
+
+    func sendWorkspaceFilesToChat(_ items: [WorkspaceFileItem]) {
+        for item in items where !item.isDirectory {
+            addFileAttachment(from: item.url)
+        }
+    }
+
+    func handleDroppedFiles(_ urls: [URL]) {
+        for url in urls {
+            addFileAttachment(from: url)
+        }
+    }
+
+    func applyDiff(_ diff: FileDiffHunk, in messageID: ChatMessage.ID) {
+        guard let conversationIndex = selectedConversationIndex(),
+              let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }),
+              let diffIndex = conversations[conversationIndex].messages[messageIndex].diffs.firstIndex(where: { $0.id == diff.id }) else { return }
+
+        let filePath = diff.filePath
+        let url = URL(fileURLWithPath: filePath).standardizedFileURL
+        do {
+            try diff.newContent.data(using: .utf8)?.write(to: url, options: .atomic)
+            conversations[conversationIndex].messages[messageIndex].diffs[diffIndex].isApplied = true
+            persistConversations()
+            refreshWorkspaceFiles()
+            appendTerminalLine("已应用补丁：\(filePath)", kind: .system, to: selectedTerminalID)
+        } catch {
+            showAlert("应用补丁失败：\(error.localizedDescription)")
+        }
+    }
+
+    func revertDiff(_ diff: FileDiffHunk, in messageID: ChatMessage.ID) {
+        guard let conversationIndex = selectedConversationIndex(),
+              let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }),
+              let diffIndex = conversations[conversationIndex].messages[messageIndex].diffs.firstIndex(where: { $0.id == diff.id }) else { return }
+
+        let filePath = diff.filePath
+        let url = URL(fileURLWithPath: filePath).standardizedFileURL
+        do {
+            try diff.oldContent.data(using: .utf8)?.write(to: url, options: .atomic)
+            conversations[conversationIndex].messages[messageIndex].diffs[diffIndex].isApplied = false
+            persistConversations()
+            refreshWorkspaceFiles()
+            appendTerminalLine("已回滚补丁：\(filePath)", kind: .system, to: selectedTerminalID)
+        } catch {
+            showAlert("回滚补丁失败：\(error.localizedDescription)")
+        }
+    }
+
     func regenerate(from message: ChatMessage) async {
         guard !isSending, let conversationIndex = selectedConversationIndex() else { return }
         guard let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == message.id }) else { return }
@@ -149,10 +237,23 @@ final class ChatViewModel: ObservableObject {
         let attachments = pendingAttachments
         pendingImages = []
         pendingAttachments = []
-        append(ChatMessage(role: .user, text: prompt, images: images, attachments: attachments))
+        var userMessage = ChatMessage(role: .user, text: prompt, images: images, attachments: attachments)
+        userMessage.tokenCount = estimateTokenCount(for: userMessage)
+        append(userMessage)
 
         let context = selectedConversation?.messages ?? []
         startAssistantResponse(context: context, imagePrompt: prompt)
+    }
+
+    func estimateTokenCount(for message: ChatMessage) -> Int {
+        var count = message.text.count / 4
+        for attachment in message.attachments {
+            count += attachment.byteCount / 4
+        }
+        for image in message.images {
+            count += 85
+        }
+        return max(count, 1)
     }
 
     func emergencyStopResponse() {
@@ -191,8 +292,8 @@ final class ChatViewModel: ObservableObject {
 
     func addFileAttachment(from url: URL) {
         do {
-            guard url.startAccessingSecurityScopedResource() else { throw ChatError.builtinToolFailed("无法访问所选文件。") }
-            defer { url.stopAccessingSecurityScopedResource() }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url)
             let mimeType = mimeType(for: url)
             if mimeType.hasPrefix("image/") {
@@ -200,7 +301,7 @@ final class ChatViewModel: ObservableObject {
                 pendingImages.append(ChatImage(base64Data: data.base64EncodedString(), mimeType: mimeType, sourceURL: url.lastPathComponent))
                 return
             }
-            guard data.count <= 5_000_000 else { throw ChatError.builtinToolFailed("文件过大，请选择 5MB 以内文件。") }
+            guard data.count <= 50_000_000 else { throw ChatError.builtinToolFailed("文件过大，请选择 50MB 以内文件。") }
             let preview = textPreview(from: data)
             pendingAttachments.append(ChatAttachment(name: url.lastPathComponent, mimeType: mimeType, base64Data: data.base64EncodedString(), textPreview: preview, byteCount: data.count, sourcePath: url.path))
         } catch {
@@ -366,8 +467,10 @@ final class ChatViewModel: ObservableObject {
     private func requestAssistantResponse(context: [ChatMessage], imagePrompt: String) async {
         guard !isSending else { return }
         isSending = true
+        streamingText = ""
         defer {
             isSending = false
+            streamingText = ""
             activeResponseTask = nil
         }
         let shouldGenerateTitle = selectedConversation?.title == "新对话" && context.contains { $0.role == .user }
@@ -377,15 +480,50 @@ final class ChatViewModel: ObservableObject {
             var assistantMessage: ChatMessage
             if composerMode == .image {
                 assistantMessage = try await client.generateImage(prompt: imagePrompt, size: imageSize)
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                append(assistantMessage)
+            } else if settings.enableStreaming {
+                assistantMessage = try await client.streamChat(messages: context) { [weak self] delta in
+                    Task { @MainActor in
+                        self?.streamingText += delta
+                    }
+                }
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                // If tool calls detected, truncate to only the JSON portion
+                let toolService = ToolInvocationService(settings: settings)
+                let invocations = toolService.extractInvocations(from: assistantMessage.text)
+                let hasTools = !invocations.isEmpty
+                if hasTools {
+                    // Keep only the tool JSON, discard any natural language the AI mixed in
+                    assistantMessage.text = invocations.map(\.rawJSON).joined()
+                    assistantMessage.isIntermediateResponse = true
+                }
+                let diffs = extractDiffs(from: assistantMessage.text)
+                if !diffs.isEmpty { assistantMessage.diffs = diffs }
+                append(assistantMessage)
+                if hasTools {
+                    try await executeToolsIncrementally(from: assistantMessage, context: context + [assistantMessage], client: client)
+                }
             } else {
                 assistantMessage = try await client.sendChat(messages: context)
-                assistantMessage.toolRuns = activeSkillRuns()
-            }
-            try Task.checkCancellation()
-            guard !shouldStopResponse else { return }
-            append(assistantMessage)
-            if composerMode == .chat {
-                try await runBuiltinToolsIfNeeded(from: assistantMessage, context: context + [assistantMessage], client: client)
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                // If tool calls detected, truncate to only the JSON portion
+                let toolService = ToolInvocationService(settings: settings)
+                let invocations = toolService.extractInvocations(from: assistantMessage.text)
+                let hasTools = !invocations.isEmpty
+                if hasTools {
+                    assistantMessage.text = invocations.map(\.rawJSON).joined()
+                    assistantMessage.isIntermediateResponse = true
+                }
+                let diffs = extractDiffs(from: assistantMessage.text)
+                if !diffs.isEmpty { assistantMessage.diffs = diffs }
+                append(assistantMessage)
+                if hasTools {
+                    try await executeToolsIncrementally(from: assistantMessage, context: context + [assistantMessage], client: client)
+                }
             }
             if shouldGenerateTitle, !shouldStopResponse, !Task.isCancelled {
                 await generateConversationTitle(using: client)
@@ -399,50 +537,111 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func runBuiltinToolsIfNeeded(from message: ChatMessage, context: [ChatMessage], client: OpenAICompatibleClient) async throws {
-        let executor = BuiltinToolExecutor(settings: settings)
+    /// Execute tools one by one as they are found, feeding results back immediately
+    private func executeToolsIncrementally(from message: ChatMessage, context: [ChatMessage], client: OpenAICompatibleClient) async throws {
+        guard settings.enableBuiltinTools else { return }
         let toolService = ToolInvocationService(settings: settings)
+        let executor = BuiltinToolExecutor(settings: settings)
         var currentMessage = message
         var currentContext = context
 
         for _ in 0..<max(settings.maxToolRounds, 0) {
             try Task.checkCancellation()
             guard !shouldStopResponse else { return }
-            let invocations = toolService.extractInvocations(from: currentMessage.text).prefix(5)
+            let invocations = Array(toolService.extractInvocations(from: currentMessage.text).prefix(8))
             guard !invocations.isEmpty else { return }
 
+            // Execute each tool invocation immediately as we process them
+            var allResults: [BuiltinToolResult] = []
             setToolInvocationRecords(for: currentMessage.id, records: invocations.map { invocation in
                 ToolInvocationRecord(id: invocation.id, toolName: invocation.name, displayName: toolDisplayName(invocation.name), input: invocation.rawJSON, output: "", status: .running, isConfirmed: nil, isComplete: false)
             })
 
-            let builtinText = invocations.filter { !isTerminalTool($0.name) && !$0.name.hasPrefix("mcp_") }.map(\.rawJSON).joined(separator: "\n")
-            let results = try await executor.executeTools(in: builtinText)
-            let skillLoadResults = executeLoadSkillInvocations(Array(invocations.filter { $0.name == "load_skill" }))
-            let terminalResults = await executeTerminalInvocations(Array(invocations.filter { isTerminalTool($0.name) }), for: currentMessage.id, toolService: toolService)
-            let mcpResults = await executeMCPInvocations(Array(invocations.filter { $0.name.hasPrefix("mcp_") }), for: currentMessage.id, toolService: toolService)
-            let allResults = results + skillLoadResults + terminalResults
-            + mcpResults
-            try Task.checkCancellation()
-            guard !shouldStopResponse else { return }
-            guard !allResults.isEmpty else { return }
+            for invocation in invocations {
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
 
-            setToolRuns(for: currentMessage.id, runs: allResults.map { ToolRun(title: $0.title, output: $0.output, status: $0.status) })
-            mergeToolInvocationResults(for: currentMessage.id, results: allResults)
+                let result: BuiltinToolResult
+                if isTerminalTool(invocation.name) {
+                    let terminalResults = await executeTerminalInvocations([invocation], for: currentMessage.id, toolService: toolService)
+                    result = terminalResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else if invocation.name == "load_skill" {
+                    let skillResults = executeLoadSkillInvocations([invocation])
+                    result = skillResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else if invocation.name.hasPrefix("mcp_") {
+                    let mcpResults = await executeMCPInvocations([invocation], for: currentMessage.id, toolService: toolService)
+                    result = mcpResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else {
+                    // Use the already-parsed request directly instead of re-parsing JSON
+                    result = await executor.executeSingleRequest(invocation.input)
+                }
+                allResults.append(result)
+
+                // Update UI immediately after each tool completes
+                mergeToolInvocationResults(for: currentMessage.id, results: [result])
+            }
+
+            guard !allResults.isEmpty else { return }
 
             let resultText = allResults.map { result in
                 let statusText = result.status == .completed ? "成功" : "失败"
-                return "工具：\n\(result.title)\n\n状态：\n\(statusText)\n\n输出：\n\(result.output)"
+                return "工具：\(result.title)\n状态：\(statusText)\n输出：\n\(result.output)"
             }.joined(separator: "\n\n---\n\n")
 
-            let toolMessage = ChatMessage(role: .user, text: "以下是你请求的 Easy Chat 内置工具执行结果。请基于这些真实输出继续回答用户；如果工具失败，可以换一个更可靠的网址或工具再次输出 {\"tool\": ...}；如果信息已经足够，请直接给用户最终答案，不要再输出工具 JSON。\n\n\(resultText)")
-            var finalMessage = try await client.sendChat(messages: currentContext + [toolMessage])
+            var toolMessage = ChatMessage(role: .user, text: "以下是工具执行结果。如需继续调用工具，整条回复只输出 JSON，不要有任何其他文字。如果信息已足够，直接用自然语言给出最终答案。\n\n\(resultText)")
+            toolMessage.isToolResult = true
+            var finalMessage: ChatMessage
+            if settings.enableStreaming {
+                streamingText = ""
+                finalMessage = try await client.streamChat(messages: currentContext + [toolMessage]) { [weak self] delta in
+                    Task { @MainActor in self?.streamingText += delta }
+                }
+                streamingText = ""
+            } else {
+                finalMessage = try await client.sendChat(messages: currentContext + [toolMessage])
+            }
             try Task.checkCancellation()
             guard !shouldStopResponse else { return }
-            finalMessage.toolRuns = activeSkillRuns()
+            // If follow-up contains tool calls, truncate to only JSON
+            let followUpInvocations = toolService.extractInvocations(from: finalMessage.text)
+            if !followUpInvocations.isEmpty {
+                finalMessage.text = followUpInvocations.map(\.rawJSON).joined()
+                finalMessage.isIntermediateResponse = true
+            }
+            let followUpDiffs = extractDiffs(from: finalMessage.text)
+            if !followUpDiffs.isEmpty { finalMessage.diffs = followUpDiffs }
             append(finalMessage)
             currentContext += [toolMessage, finalMessage]
             currentMessage = finalMessage
         }
+    }
+
+    private func extractDiffs(from text: String) -> [FileDiffHunk] {
+        guard settings.enableBuiltinTools else { return [] }
+        let toolService = ToolInvocationService(settings: settings)
+        let invocations = toolService.extractInvocations(from: text)
+        var diffs: [FileDiffHunk] = []
+        for invocation in invocations {
+            guard invocation.name == "write_file" || invocation.name == "replace_string" || invocation.name == "create_file" else { continue }
+            guard let path = invocation.input.path else { continue }
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            let oldContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let newContent: String
+            if invocation.name == "replace_string", let oldStr = invocation.input.oldString, let newStr = invocation.input.newString {
+                newContent = oldContent.replacingOccurrences(of: oldStr, with: newStr)
+            } else if let content = invocation.input.content {
+                if invocation.input.append == true {
+                    newContent = oldContent + content
+                } else {
+                    newContent = content
+                }
+            } else {
+                continue
+            }
+            guard oldContent != newContent else { continue }
+            diffs.append(FileDiffHunk(filePath: path, oldContent: oldContent, newContent: newContent))
+        }
+        return diffs
     }
 
     private func isTerminalTool(_ name: String) -> Bool {
@@ -511,7 +710,7 @@ final class ChatViewModel: ObservableObject {
         var results: [BuiltinToolResult] = []
         for invocation in invocations.prefix(3) {
             let decision = toolService.permissionDecision(for: invocation)
-            if case .ask = decision.behavior {
+            if case .ask = decision.behavior, !settings.yoloMode {
                 let approved = await requestTerminalApproval(command: invocation.name, args: [invocation.rawJSON], workingDirectory: workspaceURL?.path ?? FileManager.default.currentDirectoryPath)
                 guard approved else {
                     results.append(BuiltinToolResult(title: invocation.name, output: "用户取消 MCP 工具调用。", status: .failed))
@@ -632,7 +831,8 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func requestTerminalApproval(command: String, args: [String], workingDirectory: String) async -> Bool {
-        await withCheckedContinuation { continuation in
+        if settings.yoloMode { return true }
+        return await withCheckedContinuation { continuation in
             pendingTerminalApproval = TerminalApprovalRequest(command: command, args: args, workingDirectory: workingDirectory) { approved in
                 continuation.resume(returning: approved)
             }
@@ -667,6 +867,11 @@ final class ChatViewModel: ObservableObject {
 
     private func isSystemExecutablePath(_ path: String) -> Bool {
         path.hasPrefix("/usr/bin/") || path.hasPrefix("/bin/") || path.hasPrefix("/usr/sbin/") || path.hasPrefix("/sbin/")
+    }
+
+    private func markMessageAsIntermediate(_ messageID: ChatMessage.ID) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        conversations[conversationIndex].messages[messageIndex].isIntermediateResponse = true
     }
 
     private func setToolRuns(for messageID: ChatMessage.ID, runs: [ToolRun]) {
@@ -1026,15 +1231,6 @@ final class ChatViewModel: ObservableObject {
             files.append(SkillFile(relativePath: relativePath, content: text, byteCount: data.count))
         }
         return files
-    }
-
-    private func activeSkillRuns() -> [ToolRun] {
-        guard settings.enableSkills else { return [] }
-        return settings.skills.filter(\.isEnabled).map { skill in
-            let folderText = skill.folderName.isEmpty ? "纯文本 Skill" : skill.folderName
-            let fileText = skill.files.isEmpty ? "无附带文件" : "附带文件：\(skill.files.count) 个"
-            return ToolRun(title: "skill: \(skill.name)", output: "\(skill.description)\n来源：\(folderText)\n\(fileText)", status: .completed)
-        }
     }
 
     private func skillName(from folderURL: URL, content: String) -> String {

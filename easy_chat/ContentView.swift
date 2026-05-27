@@ -29,32 +29,37 @@ struct ContentView: View {
                         ComposerView(viewModel: viewModel, inputFocused: $inputFocused)
                     }
                     .background(.clear)
-                    .frame(minWidth: 360)
+                    .frame(minWidth: 420)
+                    .layoutPriority(1)
 
                     if !isWorkspacePanelCollapsed {
                         ResizableWorkspacePanel(viewModel: viewModel, isCollapsed: $isWorkspacePanelCollapsed, width: $workspacePanelWidth)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.82)),
+                                removal: .move(edge: .trailing).combined(with: .opacity).animation(.spring(response: 0.3, dampingFraction: 0.9))
+                            ))
                     }
                 }
                 .clipped()
                 .background(.clear)
-                .animation(.spring(response: 0.34, dampingFraction: 0.88), value: isWorkspacePanelCollapsed)
+                .animation(.spring(response: 0.38, dampingFraction: 0.84), value: isWorkspacePanelCollapsed)
             }
             .scrollContentBackground(.hidden)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
                         isWorkspacePanelCollapsed.toggle()
                     }
                 } label: {
-                    Image(systemName: "sidebar.right")
+                    Image(systemName: isWorkspacePanelCollapsed ? "sidebar.right" : "sidebar.right")
+                        .symbolEffect(.bounce, value: isWorkspacePanelCollapsed)
                 }
                 .help(isWorkspacePanelCollapsed ? "展开文件和终端" : "收起文件和终端")
             }
         }
-        .frame(minWidth: 760, minHeight: 620)
+        .frame(minWidth: 860, minHeight: 660)
         .preferredColorScheme(.light)
         .sheet(isPresented: $viewModel.isShowingSettings) {
             SettingsView(viewModel: viewModel)
@@ -84,11 +89,11 @@ struct WorkspacePanelView: View {
             WorkspaceTerminalView(viewModel: viewModel)
         }
         .padding(10)
-        .background(Color.white.opacity(0.58))
+        .background(Color(red: 0.96, green: 0.97, blue: 0.98).opacity(0.92))
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(DesignToken.border.opacity(0.75))
-                .frame(width: 1)
+                .fill(DesignToken.border.opacity(0.5))
+                .frame(width: 0.5)
         }
     }
 }
@@ -189,10 +194,9 @@ struct WorkspaceHeaderView: View {
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
         }
-        .padding(14)
-        .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(DesignToken.border))
-        .shadow(color: DesignToken.shadow.opacity(0.55), radius: 14, y: 8)
+        .padding(12)
+        .background(Color.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.4), lineWidth: 0.5))
     }
 }
 
@@ -200,60 +204,52 @@ struct WorkspaceFileBrowserView: View {
     @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("文件", systemImage: "list.bullet.rectangle")
+                Label("文件", systemImage: "folder")
                     .font(.caption.bold())
                     .foregroundStyle(DesignToken.ink)
                 Spacer()
                 Text("\(viewModel.workspaceFiles.count)")
-                    .font(.caption2.weight(.bold))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.gray.opacity(0.1), in: Capsule())
             }
 
-            HSplitView {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        if viewModel.workspaceFiles.isEmpty {
-                            Text("打开工作区后显示文件树。")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if viewModel.workspaceFiles.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "folder.badge.questionmark")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                            Text("打开工作区后显示文件树")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .padding(10)
                         }
-                        ForEach(viewModel.workspaceFiles) { item in
-                            WorkspaceFileRow(item: item, isSelected: item.id == viewModel.selectedWorkspaceFile?.id) {
-                                viewModel.selectWorkspaceFile(item)
-                            }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+                    ForEach(viewModel.workspaceFiles) { item in
+                        WorkspaceFileRow(item: item, isSelected: item.id == viewModel.selectedWorkspaceFile?.id) {
+                            viewModel.selectWorkspaceFile(item)
+                        } onSendToChat: {
+                            viewModel.sendWorkspaceFile(item)
                         }
                     }
-                    .padding(6)
                 }
-                .frame(minWidth: 90, maxHeight: .infinity)
-                .clipped()
-                .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(DesignToken.border.opacity(0.75)))
-
-                ScrollView {
-                    Text(viewModel.selectedWorkspaceFilePreview.isEmpty ? "选择文件后在这里预览文本内容。" : viewModel.selectedWorkspaceFilePreview)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(viewModel.selectedWorkspaceFilePreview.isEmpty ? .secondary : DesignToken.ink)
-                        .textSelection(.enabled)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-                        .padding(10)
-                }
-                .frame(minWidth: 90, maxHeight: .infinity)
-                .clipped()
-                .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(DesignToken.border.opacity(0.75)))
+                .padding(4)
             }
             .frame(maxHeight: .infinity)
+            .background(Color.white.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(DesignToken.border.opacity(0.4)))
         }
         .frame(maxHeight: .infinity)
         .padding(12)
-        .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(DesignToken.border))
+        .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.4), lineWidth: 0.5))
     }
 }
 
@@ -261,13 +257,15 @@ struct WorkspaceFileRow: View {
     let item: WorkspaceFileItem
     let isSelected: Bool
     let action: () -> Void
+    let onSendToChat: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Spacer().frame(width: CGFloat(item.depth) * 12)
-                Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
-                    .foregroundStyle(item.isDirectory ? DesignToken.orange : DesignToken.blue)
+                Spacer().frame(width: CGFloat(item.depth) * 14)
+                Image(systemName: fileIcon)
+                    .foregroundStyle(fileIconColor)
+                    .font(.caption)
                     .frame(width: 16)
                 Text(item.url.lastPathComponent)
                     .font(.caption)
@@ -276,11 +274,66 @@ struct WorkspaceFileRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.vertical, 4)
             .foregroundStyle(DesignToken.ink)
-            .background(isSelected ? Color.blue.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(isSelected ? DesignToken.blue.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if !item.isDirectory {
+                Button("发送到对话") { onSendToChat() }
+            }
+        }
+    }
+
+    private var fileIcon: String {
+        if item.isDirectory { return "folder.fill" }
+        let ext = item.url.pathExtension.lowercased()
+        switch ext {
+        case "swift": return "swift"
+        case "py": return "text.page"
+        case "js", "ts", "jsx", "tsx": return "curlybraces"
+        case "html", "htm": return "globe"
+        case "css", "scss", "less": return "paintbrush"
+        case "json": return "brackets"
+        case "xml", "plist": return "chevron.left.forwardslash.chevron.right"
+        case "md", "markdown", "txt", "rtf": return "doc.plaintext"
+        case "yml", "yaml", "toml": return "gearshape"
+        case "png", "jpg", "jpeg", "gif", "svg", "webp", "ico": return "photo"
+        case "mp3", "wav", "aac", "flac": return "music.note"
+        case "mp4", "mov", "avi", "mkv": return "film"
+        case "pdf": return "doc.richtext"
+        case "zip", "tar", "gz", "rar", "7z": return "archivebox"
+        case "sh", "zsh", "bash", "fish": return "terminal"
+        case "c", "cpp", "h", "hpp", "m", "mm": return "c.circle"
+        case "java", "kt", "kts": return "cup.and.saucer"
+        case "rb": return "diamond"
+        case "go": return "g.circle"
+        case "rs": return "r.circle"
+        case "sql", "db", "sqlite": return "cylinder"
+        case "env", "gitignore", "dockerignore": return "lock"
+        case "dockerfile": return "shippingbox"
+        case "lock": return "lock.fill"
+        default: return "doc"
+        }
+    }
+
+    private var fileIconColor: Color {
+        if item.isDirectory { return Color(red: 0.55, green: 0.72, blue: 0.95) }
+        let ext = item.url.pathExtension.lowercased()
+        switch ext {
+        case "swift": return .orange
+        case "py": return Color(red: 0.25, green: 0.55, blue: 0.85)
+        case "js", "jsx": return Color(red: 0.93, green: 0.80, blue: 0.20)
+        case "ts", "tsx": return Color(red: 0.18, green: 0.50, blue: 0.85)
+        case "html", "htm": return Color(red: 0.90, green: 0.35, blue: 0.20)
+        case "css", "scss": return Color(red: 0.35, green: 0.50, blue: 0.90)
+        case "json": return Color(red: 0.60, green: 0.75, blue: 0.20)
+        case "md", "txt": return .secondary
+        case "png", "jpg", "jpeg", "gif", "svg", "webp": return Color(red: 0.80, green: 0.45, blue: 0.85)
+        case "sh", "zsh", "bash": return DesignToken.mint
+        default: return DesignToken.muted
+        }
     }
 }
 
@@ -468,7 +521,6 @@ final class TerminalTextCaptureNSView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -481,6 +533,10 @@ final class TerminalTextCaptureNSView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Only handle shortcuts when this terminal view is focused
+        guard window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
         guard event.modifierFlags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else {
             return super.performKeyEquivalent(with: event)
         }
@@ -686,85 +742,27 @@ struct DesignToken {
 struct AppBackground: View {
     var body: some View {
         ZStack {
-            Color(red: 0.965, green: 0.975, blue: 1.00)
-            LinearGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.995, blue: 1.00),
-                    Color(red: 0.94, green: 0.96, blue: 1.00),
-                    Color(red: 1.00, green: 0.96, blue: 0.92)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(colors: [DesignToken.cyan.opacity(0.26), .clear], center: .topLeading, startRadius: 60, endRadius: 620)
-            RadialGradient(colors: [DesignToken.rose.opacity(0.18), .clear], center: .bottomLeading, startRadius: 60, endRadius: 520)
-            RadialGradient(colors: [DesignToken.orange.opacity(0.22), .clear], center: .bottomTrailing, startRadius: 90, endRadius: 700)
-            RadialGradient(colors: [DesignToken.lilac.opacity(0.22), .clear], center: .topTrailing, startRadius: 30, endRadius: 460)
-            VStack(spacing: 18) {
-                ForEach(0..<8, id: \.self) { _ in
-                    Rectangle()
-                        .fill(Color.white.opacity(0.22))
-                        .frame(height: 1)
-                }
-            }
-            .rotationEffect(.degrees(-8))
-            .offset(y: -120)
-            Circle()
-                .strokeBorder(DesignToken.blue.opacity(0.10), lineWidth: 42)
-                .frame(width: 360, height: 360)
-                .offset(x: 460, y: -250)
-            RoundedRectangle(cornerRadius: 80, style: .continuous)
-                .strokeBorder(DesignToken.orange.opacity(0.12), lineWidth: 36)
-                .frame(width: 340, height: 220)
-                .rotationEffect(.degrees(-18))
-                .offset(x: -480, y: 260)
-            MeshRibbon()
-                .offset(x: 180, y: 230)
-            FloatingGlassShapes()
+            Color(red: 0.97, green: 0.975, blue: 0.99)
+
+            MeshGradient(width: 3, height: 3, points: [
+                [0, 0], [0.5, 0], [1, 0],
+                [0, 0.5], [0.5, 0.5], [1, 0.5],
+                [0, 1], [0.5, 1], [1, 1]
+            ], colors: [
+                Color(red: 0.94, green: 0.96, blue: 1.0),
+                Color(red: 0.96, green: 0.97, blue: 1.0),
+                Color(red: 0.98, green: 0.96, blue: 0.99),
+                Color(red: 0.95, green: 0.97, blue: 1.0),
+                Color(red: 0.97, green: 0.98, blue: 1.0),
+                Color(red: 0.99, green: 0.97, blue: 0.96),
+                Color(red: 0.96, green: 0.98, blue: 0.99),
+                Color(red: 0.97, green: 0.97, blue: 1.0),
+                Color(red: 0.98, green: 0.97, blue: 0.97)
+            ])
+            .opacity(0.9)
         }
         .ignoresSafeArea()
-    }
-}
-
-struct FloatingGlassShapes: View {
-    var body: some View {
-        ZStack {
-            Capsule()
-                .fill(LinearGradient(colors: [DesignToken.blue.opacity(0.18), DesignToken.cyan.opacity(0.08)], startPoint: .top, endPoint: .bottom))
-                .frame(width: 160, height: 48)
-                .rotationEffect(.degrees(24))
-                .offset(x: -230, y: -250)
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(LinearGradient(colors: [DesignToken.rose.opacity(0.12), DesignToken.orange.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 132, height: 92)
-                .rotationEffect(.degrees(-18))
-                .offset(x: 330, y: 120)
-            Circle()
-                .fill(DesignToken.mint.opacity(0.15))
-                .frame(width: 92, height: 92)
-                .offset(x: -80, y: 310)
-        }
-    }
-}
-
-struct MeshRibbon: View {
-    var body: some View {
-        HStack(spacing: -18) {
-            ForEach(0..<5, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 40, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [DesignToken.blue.opacity(0.10), DesignToken.cyan.opacity(0.16), DesignToken.orange.opacity(0.12)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 72, height: 220)
-                    .rotationEffect(.degrees(Double(index) * 8 - 16))
-                    .blendMode(.multiply)
-            }
-        }
-        .blur(radius: 0.4)
+        .drawingGroup()
     }
 }
 
@@ -785,29 +783,29 @@ struct SidebarView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.regular)
             .tint(DesignToken.blue)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, 18)
 
             List(selection: $viewModel.selectedConversationID) {
                 ForEach(viewModel.conversations) { conversation in
                     HStack(spacing: 10) {
-                        Image(systemName: "message.fill")
+                        Image(systemName: "bubble.left.fill")
                             .font(.caption)
-                            .foregroundStyle(.blue)
-                            .frame(width: 28, height: 28)
-                            .background(.blue.opacity(0.12), in: Circle())
-                        VStack(alignment: .leading, spacing: 5) {
+                            .foregroundStyle(DesignToken.blue.opacity(0.8))
+                            .frame(width: 26, height: 26)
+                            .background(DesignToken.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        VStack(alignment: .leading, spacing: 3) {
                             Text(conversation.title)
-                                .font(.headline)
+                                .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
-                            Text(conversation.updatedAt.formatted(date: .omitted, time: .shortened))
-                                .font(.caption)
+                            Text(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 4)
                     .tag(conversation.id)
                     .contextMenu {
                         Button("删除", role: .destructive) {
@@ -823,19 +821,19 @@ struct SidebarView: View {
                 Button {
                     viewModel.isShowingSettings = true
                 } label: {
-                    Label("提供商与模型设置", systemImage: "slider.horizontal.3")
+                    Label("设置", systemImage: "gearshape")
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.callout.weight(.medium))
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
-            .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(DesignToken.border))
-            .shadow(color: DesignToken.shadow, radius: 18, y: 10)
+            .padding(14)
+            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.5), lineWidth: 0.5))
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
-        .background(Color.white.opacity(0.66))
+        .background(Color(red: 0.96, green: 0.97, blue: 0.99).opacity(0.94))
     }
 }
 
@@ -844,35 +842,41 @@ struct BrandHeroCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(LinearGradient(colors: [DesignToken.blue, DesignToken.cyan, DesignToken.mint], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(
+                            LinearGradient(colors: [
+                                Color(red: 0.20, green: 0.36, blue: 1.0),
+                                Color(red: 0.10, green: 0.70, blue: 0.92),
+                                DesignToken.mint
+                            ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
                     Image(systemName: "wand.and.stars")
                         .font(.title2.bold())
                         .foregroundStyle(.white)
                 }
-                .frame(width: 54, height: 54)
-                .shadow(color: DesignToken.blue.opacity(0.24), radius: 18, y: 8)
+                .frame(width: 50, height: 50)
+                .shadow(color: DesignToken.blue.opacity(0.20), radius: 12, y: 6)
                 Spacer()
-                Image(systemName: "bolt.horizontal.circle.fill")
-                    .foregroundStyle(DesignToken.orange)
-                    .font(.title3)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Easy Chat")
-                    .font(.system(size: 27, weight: .black, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(DesignToken.ink)
-                Text("多模型 · 图像上下文 · 工具后台")
-                    .font(.caption.weight(.semibold))
+                Text("多模型 · 工具 · 工作区")
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(DesignToken.muted)
             }
         }
         .padding(16)
         .background(
-            LinearGradient(colors: [Color.white.opacity(0.96), Color(red: 0.93, green: 0.97, blue: 1.0).opacity(0.90)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.80))
+                .shadow(color: DesignToken.shadow.opacity(0.6), radius: 20, y: 10)
         )
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.75), lineWidth: 1))
-        .shadow(color: DesignToken.shadow, radius: 24, y: 14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.6), lineWidth: 1)
+        )
     }
 }
 
@@ -889,29 +893,36 @@ struct MessageListView: View {
                     }
 
                     ForEach(viewModel.selectedConversation?.messages ?? []) { message in
-                        MessageBubble(
-                            message: message,
-                            onDelete: { viewModel.deleteMessage(message) },
-                            onRegenerate: {
-                                Task { await viewModel.regenerate(from: message) }
-                            }
-                        )
-                            .id(message.id)
+                        if viewModel.editingMessageID == message.id {
+                            MessageEditView(viewModel: viewModel)
+                                .id(message.id)
+                        } else if message.isToolResult {
+                            // Tool result messages are hidden — they're internal
+                            EmptyView().id(message.id)
+                        } else if message.isIntermediateResponse {
+                            CollapsedIntermediateBubble(message: message)
+                                .id(message.id)
+                        } else {
+                            MessageBubble(
+                                message: message,
+                                onDelete: { viewModel.deleteMessage(message) },
+                                onRegenerate: {
+                                    Task { await viewModel.regenerate(from: message) }
+                                },
+                                onEdit: { viewModel.startEditingMessage(message) },
+                                onApplyDiff: { diff in viewModel.applyDiff(diff, in: message.id) },
+                                onRevertDiff: { diff in viewModel.revertDiff(diff, in: message.id) }
+                            )
+                                .id(message.id)
+                        }
                     }
 
                     if viewModel.isSending {
-                        HStack {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(viewModel.composerMode == .image ? "正在生成图片…" : "正在思考…")
-                                .foregroundStyle(.secondary)
-                            Spacer()
+                        if viewModel.streamingText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+                            StreamingToolIndicator()
+                        } else {
+                            StreamingBubbleView(streamingText: viewModel.streamingText, composerMode: viewModel.composerMode)
                         }
-                        .padding()
-                        .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(DesignToken.border))
-                        .shadow(color: DesignToken.shadow, radius: 18, y: 10)
-                        .padding(.horizontal, 24)
                     }
                 }
                 .padding(.vertical, 24)
@@ -926,48 +937,250 @@ struct MessageListView: View {
                     }
                 }
             }
+            .onChange(of: viewModel.streamingText) { _, newValue in
+                // Only scroll every ~300 chars to avoid per-token animation overhead
+                if newValue.count % 40 < 4 || newValue.hasSuffix("\n") {
+                    proxy.scrollTo("streaming-bottom", anchor: .bottom)
+                }
+            }
         }
     }
 }
 
-struct EmptyChatView: View {
+struct StreamingToolIndicator: View {
+    @State private var pulse = false
+
     var body: some View {
-        VStack(spacing: 22) {
-            ZStack(alignment: .bottomTrailing) {
-                RoundedRectangle(cornerRadius: 38, style: .continuous)
-                    .fill(LinearGradient(colors: [DesignToken.blue.opacity(0.13), DesignToken.cyan.opacity(0.18), DesignToken.orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 156, height: 132)
-                    .rotationEffect(.degrees(-5))
-                Image(systemName: "wand.and.stars.inverse")
-                    .font(.system(size: 58, weight: .bold))
-                    .foregroundStyle(LinearGradient(colors: [DesignToken.blue, DesignToken.cyan, DesignToken.orange], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Text("AI")
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(DesignToken.ink, in: Capsule())
-                    .offset(x: 16, y: 10)
-            }
-            Text("把模型、图像和工具编排成一个画布")
-                .font(.system(size: 32, weight: .black, design: .rounded))
-                .foregroundStyle(DesignToken.ink)
-            Text("支持 OpenAI 格式的 v1/responses、v1/chat/completions 与图片生成接口。图片 URL 会自动下载并转换为 Base64 保存到上下文。")
-                .font(.callout)
+        HStack(spacing: 6) {
+            Image(systemName: "gearshape.2")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 520)
+                .rotationEffect(.degrees(pulse ? 360 : 0))
+                .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: pulse)
+            Text("正在调用工具…")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(0.06), in: Capsule())
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .id("streaming-bottom")
+        .onAppear { pulse = true }
+    }
+}
+
+struct StreamingBubbleView: View {
+    let streamingText: String
+    let composerMode: ComposerMode
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.purple)
+                        .symbolEffect(.variableColor.iterative, options: .repeating)
+                    Text("AI")
+                        .font(.caption.bold())
+                    Text(composerMode == .image ? "正在生成图片…" : "正在回复…")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    Spacer()
+                }
+                if !streamingText.isEmpty {
+                    MarkdownMessageText(streamingText)
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(0..<3, id: \.self) { i in
+                            Circle()
+                                .fill(DesignToken.blue.opacity(0.5))
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(pulse ? 1.0 : 0.5)
+                                .animation(.easeInOut(duration: 0.6).repeatForever().delay(Double(i) * 0.15), value: pulse)
+                        }
+                    }
+                    .onAppear { pulse = true }
+                }
+            }
+            .padding(18)
+            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(DesignToken.border.opacity(0.6)))
+            .shadow(color: DesignToken.shadow.opacity(0.5), radius: 16, y: 8)
+            .frame(maxWidth: 760, alignment: .leading)
+            Spacer(minLength: 120)
+        }
+        .padding(.horizontal, 24)
+        .id("streaming-bottom")
+    }
+}
+
+struct CollapsedIntermediateBubble: View {
+    let message: ChatMessage
+    @State private var isExpanded = false
+
+    private static let toolService = ToolInvocationService(settings: ProviderSettings())
+
+    private var toolNames: [String] {
+        Self.toolService.extractInvocations(from: message.text).map(\.name)
+    }
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gearshape.2")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("调用了 \(toolNames.count) 个工具")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        if !message.toolInvocations.isEmpty {
+                            Text("· \(message.toolInvocations.filter(\.isComplete).count)/\(message.toolInvocations.count) 完成")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.06), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(message.toolInvocations) { record in
+                            HStack(spacing: 6) {
+                                Image(systemName: record.isComplete ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(record.status == .completed ? DesignToken.mint : (record.status == .failed ? DesignToken.rose : .secondary))
+                                Text(record.displayName)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(DesignToken.ink)
+                                Text(record.input.prefix(60) + (record.input.count > 60 ? "…" : ""))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        if !Self.toolService.displayTextByHidingInvocations(in: message.text).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(Self.toolService.displayTextByHidingInvocations(in: message.text))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(4)
+                                .padding(.top, 4)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+                }
+            }
+            .padding(.vertical, 4)
+            Spacer(minLength: 200)
+        }
+        .padding(.horizontal, 24)
+    }
+}
+
+struct MessageEditView: View {
+    @ObservedObject var viewModel: ChatViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "pencil.circle.fill")
+                    .foregroundStyle(DesignToken.blue)
+                Text("编辑消息")
+                    .font(.caption.bold())
+                Spacer()
+            }
+            TextEditor(text: $viewModel.editingText)
+                .font(.body)
+                .frame(minHeight: 60, maxHeight: 200)
+                .scrollContentBackground(.hidden)
+                .padding(10)
+                .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(DesignToken.border))
+            HStack {
+                Spacer()
+                Button("取消") { viewModel.cancelEditing() }
+                Button("保存并重新生成") { Task { await viewModel.submitEdit() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DesignToken.blue)
+                    .disabled(viewModel.editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(18)
+        .background(LinearGradient(colors: [Color(red: 0.90, green: 0.95, blue: 1.00), Color(red: 0.96, green: 0.99, blue: 0.98)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(DesignToken.blue.opacity(0.40)))
+        .shadow(color: DesignToken.shadow, radius: 18, y: 10)
+        .padding(.horizontal, 24)
+    }
+}
+
+struct EmptyChatView: View {
+    @State private var appear = false
+
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(colors: [DesignToken.blue.opacity(0.08), DesignToken.cyan.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(appear ? 1.0 : 0.8)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(colors: [DesignToken.blue, DesignToken.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .scaleEffect(appear ? 1.0 : 0.6)
+                    .opacity(appear ? 1.0 : 0.0)
+            }
+
+            VStack(spacing: 8) {
+                Text("开始对话")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(DesignToken.ink)
+                Text("支持 OpenAI 兼容接口 · 图片生成 · 工具调用 · 工作区终端")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+            .opacity(appear ? 1.0 : 0.0)
+            .offset(y: appear ? 0 : 12)
+
             HStack(spacing: 10) {
                 FeatureTile(icon: "switch.2", title: "多模型")
                 FeatureTile(icon: "brain.head.profile", title: "思考")
                 FeatureTile(icon: "globe", title: "搜索")
-                FeatureTile(icon: "photo", title: "图片上下文")
+                FeatureTile(icon: "photo", title: "图片")
+                FeatureTile(icon: "terminal", title: "终端")
+            }
+            .opacity(appear ? 1.0 : 0.0)
+            .offset(y: appear ? 0 : 16)
+        }
+        .padding(40)
+        .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.5), lineWidth: 1))
+        .shadow(color: DesignToken.shadow.opacity(0.5), radius: 30, y: 16)
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.75).delay(0.1)) {
+                appear = true
             }
         }
-        .padding(38)
-        .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 36, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 36).stroke(DesignToken.border))
-        .shadow(color: DesignToken.shadow, radius: 32, y: 18)
     }
 }
 
@@ -976,16 +1189,17 @@ struct FeatureTile: View {
     let title: String
 
     var body: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 6) {
             Image(systemName: icon)
+                .font(.body.weight(.medium))
                 .foregroundStyle(DesignToken.blue)
             Text(title)
-                .font(.caption.weight(.bold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(DesignToken.ink)
         }
-        .frame(width: 92, height: 64)
-        .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(DesignToken.border))
+        .frame(width: 72, height: 56)
+        .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.5), lineWidth: 0.5))
     }
 }
 
@@ -993,13 +1207,21 @@ struct MessageBubble: View {
     let message: ChatMessage
     let onDelete: () -> Void
     let onRegenerate: () -> Void
+    let onEdit: () -> Void
+    let onApplyDiff: (FileDiffHunk) -> Void
+    let onRevertDiff: (FileDiffHunk) -> Void
+    @State private var appeared = false
+
+    private static let toolService = ToolInvocationService(settings: ProviderSettings())
 
     private var toolRequests: [ToolInvocation] {
-        ToolInvocationService(settings: ProviderSettings()).extractInvocations(from: message.text)
+        guard message.role == .assistant else { return [] }
+        return Self.toolService.extractInvocations(from: message.text)
     }
 
     private var displayText: String {
-        ToolInvocationService(settings: ProviderSettings()).displayTextByHidingInvocations(in: message.text)
+        guard message.role == .assistant else { return message.text }
+        return Self.toolService.displayTextByHidingInvocations(in: message.text)
     }
 
     var body: some View {
@@ -1018,7 +1240,7 @@ struct MessageBubble: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 12)
-                    MessageActionBar(message: message, onCopy: copyMessage, onDelete: onDelete, onRegenerate: onRegenerate)
+                    MessageActionBar(message: message, onCopy: copyMessage, onDelete: onDelete, onRegenerate: onRegenerate, onEdit: onEdit)
                 }
 
                 if !displayText.isEmpty {
@@ -1034,24 +1256,7 @@ struct MessageBubble: View {
                 }
 
                 ForEach(message.images) { image in
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let nsImage = image.nsImage {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .scaledToFit()
-                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 18).stroke(DesignToken.border))
-                                .frame(maxHeight: 420)
-                                .shadow(color: DesignToken.shadow, radius: 16, y: 8)
-                        }
-                        if let sourceURL = image.sourceURL {
-                            Text(sourceURL)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .textSelection(.enabled)
-                        }
-                    }
+                    ImageBubble(image: image)
                 }
 
                 if !message.attachments.isEmpty {
@@ -1062,12 +1267,14 @@ struct MessageBubble: View {
                     }
                 }
 
-                if !message.toolRuns.isEmpty {
-                    ToolRunsView(toolRuns: message.toolRuns)
+                if !message.diffs.isEmpty {
+                    DiffPreviewView(diffs: message.diffs, messageID: message.id, onApply: onApplyDiff, onRevert: onRevertDiff)
                 }
 
                 if !message.toolInvocations.isEmpty {
                     ToolInvocationsView(records: message.toolInvocations)
+                } else if !message.toolRuns.isEmpty {
+                    ToolRunsView(toolRuns: message.toolRuns)
                 }
             }
             .padding(18)
@@ -1080,26 +1287,184 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 24)
         .contextMenu {
-            Button("重新生成") {
-                onRegenerate()
-            }
-            Button("删除", role: .destructive) {
-                onDelete()
+            Button("编辑") { onEdit() }
+            Button("重新生成") { onRegenerate() }
+            Button("删除", role: .destructive) { onDelete() }
+        }
+        .opacity(appeared ? 1.0 : 0.0)
+        .offset(y: appeared ? 0 : 8)
+        .onAppear {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                appeared = true
             }
         }
     }
 
     private var bubbleBackground: some ShapeStyle {
         if message.role == .user {
-            return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.90, green: 0.95, blue: 1.00), Color(red: 0.96, green: 0.99, blue: 0.98)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            return AnyShapeStyle(LinearGradient(colors: [Color(red: 0.92, green: 0.96, blue: 1.00), Color(red: 0.96, green: 0.98, blue: 1.00)], startPoint: .topLeading, endPoint: .bottomTrailing))
         }
-        return AnyShapeStyle(DesignToken.paper)
+        return AnyShapeStyle(Color.white.opacity(0.85))
     }
 
     private func copyMessage() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(message.copyText, forType: .string)
+    }
+}
+
+struct ImageBubble: View {
+    let image: ChatImage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let nsImage = image.nsImage {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(DesignToken.border))
+                    .frame(maxHeight: 420)
+                    .shadow(color: DesignToken.shadow, radius: 16, y: 8)
+                    .contextMenu {
+                        Button("复制图片") { copyImage(nsImage) }
+                        Button("保存图片…") { saveImage(nsImage) }
+                    }
+            }
+            if let sourceURL = image.sourceURL {
+                Text(sourceURL)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func copyImage(_ nsImage: NSImage) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([nsImage])
+    }
+
+    private func saveImage(_ nsImage: NSImage) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = image.sourceURL ?? "image.png"
+        if panel.runModal() == .OK, let url = panel.url {
+            guard let tiffData = nsImage.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiffData),
+                  let pngData = rep.representation(using: .png, properties: [:]) else { return }
+            try? pngData.write(to: url)
+        }
+    }
+}
+
+struct DiffPreviewView: View {
+    let diffs: [FileDiffHunk]
+    let messageID: ChatMessage.ID
+    let onApply: (FileDiffHunk) -> Void
+    let onRevert: (FileDiffHunk) -> Void
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(diffs) { diff in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: diff.isApplied ? "checkmark.circle.fill" : "doc.badge.gearshape")
+                                .foregroundStyle(diff.isApplied ? DesignToken.mint : DesignToken.orange)
+                            Text(diff.filePath)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            if diff.isApplied {
+                                Button("回滚") { onRevert(diff) }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(DesignToken.rose)
+                            } else {
+                                Button("应用") { onApply(diff) }
+                                    .font(.caption.weight(.semibold))
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                            }
+                        }
+                        SimpleDiffView(oldContent: diff.oldContent, newContent: diff.newContent)
+                    }
+                    .padding(10)
+                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border))
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.badge.gearshape")
+                    .foregroundStyle(DesignToken.orange)
+                Text("文件变更 \(diffs.filter(\.isApplied).count)/\(diffs.count) 已应用")
+                    .font(.caption.weight(.bold))
+                Spacer()
+            }
+            .padding(10)
+            .background(DesignToken.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+}
+
+struct SimpleDiffView: View {
+    let oldContent: String
+    let newContent: String
+
+    var body: some View {
+        let diffLines = computeDiffLines()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(diffLines.prefix(60).enumerated()), id: \.offset) { _, line in
+                    Text(line.text)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(line.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(line.background)
+                }
+                if diffLines.count > 60 {
+                    Text("… 省略 \(diffLines.count - 60) 行")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                }
+            }
+        }
+        .frame(maxHeight: 200)
+        .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private struct DiffLine {
+        let text: String
+        let color: Color
+        let background: Color
+    }
+
+    private func computeDiffLines() -> [DiffLine] {
+        let oldLines = oldContent.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let newLines = newContent.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var result: [DiffLine] = []
+        let oldSet = Set(oldLines)
+        let newSet = Set(newLines)
+        for line in oldLines where !newSet.contains(line) {
+            result.append(DiffLine(text: "- \(line)", color: DesignToken.rose, background: DesignToken.rose.opacity(0.08)))
+        }
+        for line in newLines where !oldSet.contains(line) {
+            result.append(DiffLine(text: "+ \(line)", color: Color(red: 0.1, green: 0.6, blue: 0.3), background: Color.green.opacity(0.08)))
+        }
+        if result.isEmpty {
+            result.append(DiffLine(text: "（无差异或差异过复杂，请对比原文件）", color: .secondary, background: .clear))
+        }
+        return result
     }
 }
 
@@ -1133,45 +1498,27 @@ struct ToolRequestBubble: View {
     let invocation: ToolInvocation
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(iconColor.opacity(0.15))
-                Image(systemName: iconName)
-                    .font(.caption.bold())
-                    .foregroundStyle(iconColor)
-            }
-            .frame(width: 30, height: 30)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text("申请调用")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(displayName)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(DesignToken.ink)
-                }
-                if !summary.isEmpty {
-                    Text(summary)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(DesignToken.muted)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer(minLength: 0)
+        HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 10))
+                .foregroundStyle(iconColor)
+            Text(displayName)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(DesignToken.muted)
+            Text(summary.prefix(50) + (summary.count > 50 ? "…" : ""))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
-        .padding(10)
-        .background(
-            LinearGradient(colors: [iconColor.opacity(0.08), Color.white.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(iconColor.opacity(0.18)))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(iconColor.opacity(0.05), in: Capsule())
     }
 
+    private static let toolService = ToolInvocationService(settings: ProviderSettings())
+
     private var displayName: String {
-        ToolInvocationService(settings: ProviderSettings()).definition(named: invocation.name)?.displayName ?? invocation.name
+        Self.toolService.definition(named: invocation.name)?.displayName ?? invocation.name
     }
 
     private var summary: String {
@@ -1277,15 +1624,7 @@ struct MarkdownMessageText: View {
                 }
             }
         case let .code(value):
-            ScrollView(.horizontal, showsIndicators: true) {
-                Text(value)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-            }
-            .background(Color.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(DesignToken.border))
+            CodeBlockView(code: value)
         case let .table(rows):
             MarkdownTableView(rows: rows)
         }
@@ -1311,6 +1650,48 @@ struct MarkdownMessageText: View {
 
     private var markdownBlocks: [MarkdownBlock] {
         MarkdownBlock.parse(text)
+    }
+}
+
+struct CodeBlockView: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(code, forType: .string)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { copied = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation { copied = false }
+                    }
+                } label: {
+                    Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(copied ? DesignToken.mint : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.6), in: Capsule())
+                }
+                .buttonStyle(.borderless)
+                .padding(.trailing, 8)
+                .padding(.top, 8)
+            }
+            ScrollView(.horizontal, showsIndicators: true) {
+                Text(code)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
+            }
+        }
+        .background(Color(red: 0.96, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border.opacity(0.5)))
     }
 }
 
@@ -1406,13 +1787,29 @@ struct MarkdownBlock: Identifiable {
                 var quoteLines: [String] = []
                 while index < lines.count {
                     let current = lines[index].trimmingCharacters(in: .whitespaces)
-                    guard current.hasPrefix(">") else { break }
-                    var value = String(current.dropFirst()).trimmingCharacters(in: .whitespaces)
-                    if value.hasPrefix(">") { value = String(value.dropFirst()).trimmingCharacters(in: .whitespaces) }
-                    quoteLines.append(value)
+                    guard current.hasPrefix(">") || current.isEmpty else { break }
+                    if current.isEmpty {
+                        // Empty line between quote blocks — check if next line continues the quote
+                        if index + 1 < lines.count, lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix(">") {
+                            index += 1
+                            continue
+                        } else {
+                            break
+                        }
+                    }
+                    var value = String(current.dropFirst())
+                    if value.hasPrefix(" ") { value = String(value.dropFirst()) }
+                    if value.hasPrefix(">") { value = String(value.dropFirst()).trimmingCharacters(in: .init(charactersIn: " ")) }
+                    if value.isEmpty {
+                        quoteLines.append("")
+                    } else {
+                        quoteLines.append(value)
+                    }
                     index += 1
                 }
-                blocks.append(MarkdownBlock(kind: .quote(quoteLines.joined(separator: "\n"))))
+                // Join lines, collapsing multiple empty lines into one
+                let joined = quoteLines.joined(separator: " ").replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                blocks.append(MarkdownBlock(kind: .quote(joined)))
                 continue
             }
 
@@ -1498,50 +1895,39 @@ struct ToolRunsView: View {
 
     var body: some View {
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(toolRuns) { run in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Image(systemName: icon(for: run.status))
-                                .foregroundStyle(color(for: run.status))
-                            Text(run.title)
-                                .font(.caption.weight(.semibold))
-                            Spacer()
-                        }
-                        if !run.output.isEmpty {
-                            ScrollView {
-                                Text(run.output)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(DesignToken.muted)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .frame(maxHeight: 180)
-                            .padding(10)
-                            .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border))
-                        } else {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("工具执行中…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                    HStack(spacing: 6) {
+                        Image(systemName: icon(for: run.status))
+                            .font(.system(size: 9))
+                            .foregroundStyle(color(for: run.status))
+                        Text(run.title)
+                            .font(.caption2.weight(.medium))
+                        Spacer()
+                    }
+                    .padding(.vertical, 2)
+                    if !run.output.isEmpty {
+                        Text(run.output.prefix(100) + (run.output.count > 100 ? "…" : ""))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(2)
+                            .padding(.leading, 16)
                     }
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 4)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .foregroundStyle(DesignToken.blue)
-                Text("工具执行 \(completedCount)/\(toolRuns.count)")
-                    .font(.caption.weight(.bold))
-                Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape.2")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(completedCount)/\(toolRuns.count) 工具完成")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
-            .padding(10)
-            .background(Color.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.gray.opacity(0.06), in: Capsule())
         }
     }
 
@@ -1559,7 +1945,7 @@ struct ToolRunsView: View {
 
     private func color(for status: ToolRunStatus) -> Color {
         switch status {
-        case .running: DesignToken.orange
+        case .running: .secondary
         case .completed: DesignToken.mint
         case .failed: DesignToken.rose
         }
@@ -1571,59 +1957,44 @@ struct ToolInvocationsView: View {
 
     var body: some View {
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(records) { record in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Image(systemName: icon(for: record.status))
-                                .foregroundStyle(color(for: record.status))
-                            Text(record.displayName)
-                                .font(.caption.weight(.semibold))
-                            Text(record.toolName)
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            if let isConfirmed = record.isConfirmed {
-                                Text(isConfirmed ? "confirmed" : "denied")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(isConfirmed ? DesignToken.mint : DesignToken.rose)
-                            }
+                    HStack(spacing: 6) {
+                        Image(systemName: icon(for: record.status))
+                            .font(.system(size: 9))
+                            .foregroundStyle(color(for: record.status))
+                        Text(record.displayName)
+                            .font(.caption2.weight(.medium))
+                        Spacer()
+                        if let isConfirmed = record.isConfirmed {
+                            Image(systemName: isConfirmed ? "checkmark" : "xmark")
+                                .font(.system(size: 8))
+                                .foregroundStyle(isConfirmed ? DesignToken.mint : DesignToken.rose)
                         }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Input")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.secondary)
-                            Text(record.input)
-                                .font(.system(.caption2, design: .monospaced))
-                                .textSelection(.enabled)
-                            if !record.output.isEmpty {
-                                Divider()
-                                Text("Output")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.secondary)
-                                Text(record.output)
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border))
+                    }
+                    .padding(.vertical, 2)
+                    if !record.output.isEmpty {
+                        Text(record.output.prefix(120) + (record.output.count > 120 ? "…" : ""))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(2)
+                            .padding(.leading, 16)
                     }
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 4)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .foregroundStyle(DesignToken.lilac)
-                Text("Tool Invocations \(completedCount)/\(records.count)")
-                    .font(.caption.weight(.bold))
-                Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape.2")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(completedCount)/\(records.count) 工具完成")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
-            .padding(10)
-            .background(DesignToken.lilac.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.gray.opacity(0.06), in: Capsule())
         }
     }
 
@@ -1641,7 +2012,7 @@ struct ToolInvocationsView: View {
 
     private func color(for status: ToolRunStatus) -> Color {
         switch status {
-        case .running: DesignToken.orange
+        case .running: .secondary
         case .completed: DesignToken.mint
         case .failed: DesignToken.rose
         }
@@ -1653,9 +2024,21 @@ struct MessageActionBar: View {
     let onCopy: () -> Void
     let onDelete: () -> Void
     let onRegenerate: () -> Void
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
+            if message.role == .user {
+                Button {
+                    onEdit()
+                } label: {
+                    Label("编辑", systemImage: "pencil")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .help("编辑此消息并重新生成")
+            }
+
             Button {
                 onCopy()
             } label: {
@@ -1682,6 +2065,15 @@ struct MessageActionBar: View {
             }
             .buttonStyle(.borderless)
             .help("从当前对话上下文中删除这条消息")
+
+            if let tokenCount = message.tokenCount {
+                Text("\(tokenCount) tok")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.gray.opacity(0.12), in: Capsule())
+            }
         }
         .font(.caption)
     }
@@ -1706,9 +2098,9 @@ struct ComposerView: View {
                         .padding(.horizontal, 14)
                     composerToolbar
                 }
-                .background(DesignToken.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 26).stroke(DesignToken.border))
-                .shadow(color: DesignToken.shadow.opacity(0.75), radius: 16, y: 8)
+                .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24).stroke(DesignToken.border.opacity(0.6)))
+                .shadow(color: DesignToken.shadow.opacity(0.6), radius: 14, y: 6)
 
                 Button {
                     if viewModel.isSending {
@@ -1720,12 +2112,14 @@ struct ComposerView: View {
                     Image(systemName: viewModel.isSending ? "stop.fill" : (viewModel.composerMode == .image ? "paintbrush.pointed.fill" : "paperplane.fill"))
                         .font(.title3)
                         .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 48, height: 48)
                         .background(
                             LinearGradient(colors: viewModel.isSending ? [DesignToken.rose, DesignToken.orange] : (viewModel.composerMode == .image ? [DesignToken.lilac, DesignToken.rose] : [DesignToken.blue, DesignToken.cyan]), startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
-                        .shadow(color: (viewModel.isSending ? DesignToken.rose : (viewModel.composerMode == .image ? DesignToken.lilac : DesignToken.blue)).opacity(0.26), radius: 16, y: 8)
+                        .shadow(color: (viewModel.isSending ? DesignToken.rose : (viewModel.composerMode == .image ? DesignToken.lilac : DesignToken.blue)).opacity(0.22), radius: 12, y: 6)
+                        .scaleEffect(viewModel.isSending ? 0.95 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isSending)
                 }
                 .buttonStyle(.plain)
                 .help(viewModel.isSending ? "急停 AI 响应" : "发送")
@@ -1736,7 +2130,7 @@ struct ComposerView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 12)
-        .background(.ultraThinMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous))
+        .background(Color.white.opacity(0.88), in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous))
         .overlay(alignment: .top) {
             LinearGradient(colors: [DesignToken.blue.opacity(0.16), .clear], startPoint: .leading, endPoint: .trailing)
                 .frame(height: 1)
@@ -1746,94 +2140,141 @@ struct ComposerView: View {
                 urls.forEach { viewModel.addFileAttachment(from: $0) }
             }
         }
+        .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
+            for provider in providers {
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
+                    guard let data = data as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                    Task { @MainActor in viewModel.handleDroppedFiles([url]) }
+                }
+            }
+            return true
+        }
     }
 
     private var composerToolbar: some View {
-        HStack(spacing: 6) {
-            Button {
+        HStack(spacing: 4) {
+            // Attach
+            ToolbarPillButton(icon: "paperclip", isActive: false) {
                 isShowingFileImporter = true
-            } label: {
-                Image(systemName: "paperclip")
             }
-            .buttonStyle(.borderless)
             .help("添加附件")
 
-            Picker("模型", selection: $viewModel.settings.chatModel) {
+            Divider().frame(height: 16).padding(.horizontal, 2)
+
+            // Model picker
+            Menu {
                 ForEach(viewModel.settings.availableModels, id: \.self) { model in
-                    Text(model).tag(model)
+                    Button(model) { viewModel.settings.chatModel = model; viewModel.persistSettings() }
                 }
-            }
-            .labelsHidden()
-            .frame(width: 150)
-            .controlSize(.small)
-            .onChange(of: viewModel.settings.chatModel) { _, _ in viewModel.persistSettings() }
-
-            Picker("模式", selection: $viewModel.composerMode) {
-                ForEach(ComposerMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.icon).tag(mode)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "cpu")
+                        .font(.caption2)
+                    Text(viewModel.settings.chatModel.split(separator: "/").last.map(String.init) ?? viewModel.settings.chatModel)
+                        .font(.caption2.weight(.medium))
+                        .lineLimit(1)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.gray.opacity(0.08), in: Capsule())
             }
-            .labelsHidden()
-            .frame(width: 74)
-            .controlSize(.small)
+            .buttonStyle(.plain)
 
-            Toggle(isOn: $viewModel.settings.useResponsesAPI) {
-                Image(systemName: "bolt")
-            }
-            .toggleStyle(.button)
-            .controlSize(.small)
-            .help(viewModel.settings.useResponsesAPI ? "当前使用 Responses API" : "当前使用 Chat Completions API")
-            .onChange(of: viewModel.settings.useResponsesAPI) { _, _ in viewModel.persistSettings() }
+            Divider().frame(height: 16).padding(.horizontal, 2)
 
-            Toggle(isOn: $viewModel.settings.enableReasoning) {
-                Image(systemName: "brain.head.profile")
+            // Mode toggle
+            ToolbarPillButton(icon: viewModel.composerMode == .image ? "photo.artframe" : "text.bubble", isActive: viewModel.composerMode == .image) {
+                viewModel.composerMode = viewModel.composerMode == .chat ? .image : .chat
             }
-            .toggleStyle(.button)
-            .controlSize(.small)
-            .help(viewModel.settings.enableReasoning ? "已启用思考参数" : "未启用思考参数")
-            .onChange(of: viewModel.settings.enableReasoning) { _, _ in viewModel.persistSettings() }
+            .help(viewModel.composerMode == .image ? "图片模式" : "对话模式")
+
+            // API toggle
+            ToolbarPillButton(icon: "bolt", isActive: viewModel.settings.useResponsesAPI) {
+                viewModel.settings.useResponsesAPI.toggle(); viewModel.persistSettings()
+            }
+            .help(viewModel.settings.useResponsesAPI ? "Responses API" : "Chat Completions")
+
+            // Reasoning
+            ToolbarPillButton(icon: "brain.head.profile", isActive: viewModel.settings.enableReasoning) {
+                viewModel.settings.enableReasoning.toggle(); viewModel.persistSettings()
+            }
+            .help(viewModel.settings.enableReasoning ? "思考已开启" : "思考已关闭")
+
+            // Streaming
+            ToolbarPillButton(icon: "water.waves", isActive: viewModel.settings.enableStreaming) {
+                viewModel.settings.enableStreaming.toggle(); viewModel.persistSettings()
+            }
+            .help(viewModel.settings.enableStreaming ? "流式已开启" : "流式已关闭")
+
+            // YOLO
+            ToolbarPillButton(icon: "bolt.shield", isActive: viewModel.settings.yoloMode, activeColor: DesignToken.rose) {
+                viewModel.settings.yoloMode.toggle(); viewModel.persistSettings()
+            }
+            .help(viewModel.settings.yoloMode ? "YOLO：跳过审核" : "安全模式")
 
             if viewModel.settings.enableReasoning {
-                Picker("思考长度", selection: $viewModel.settings.reasoningEffort) {
+                Menu {
                     ForEach(["minimal", "low", "medium", "high"], id: \.self) { value in
-                        Text(value).tag(value)
+                        Button(value) { viewModel.settings.reasoningEffort = value; viewModel.persistSettings() }
                     }
+                } label: {
+                    Text(viewModel.settings.reasoningEffort)
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.purple.opacity(0.08), in: Capsule())
                 }
-                .labelsHidden()
-                .frame(width: 76)
-                .controlSize(.small)
-                .onChange(of: viewModel.settings.reasoningEffort) { _, _ in viewModel.persistSettings() }
+                .buttonStyle(.plain)
             }
 
             if viewModel.composerMode == .image {
-                Picker("尺寸", selection: $viewModel.imageSize) {
+                Menu {
                     ForEach(["1024x1024", "1024x1536", "1536x1024"], id: \.self) { size in
-                        Text(size).tag(size)
+                        Button(size) { viewModel.imageSize = size }
                     }
+                } label: {
+                    Text(viewModel.imageSize)
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.pink.opacity(0.08), in: Capsule())
                 }
-                .labelsHidden()
-                .frame(width: 104)
-                .controlSize(.small)
+                .buttonStyle(.plain)
             }
 
             Spacer(minLength: 4)
 
             Text("⌘↩")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(.caption2, design: .monospaced).weight(.medium))
+                .foregroundStyle(.tertiary)
 
-            Button {
+            ToolbarPillButton(icon: "arrow.clockwise", isActive: false) {
                 Task { await viewModel.regenerateLastAssistant() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
             }
-            .font(.caption)
-            .buttonStyle(.borderless)
-            .help("重新生成上一条")
             .disabled(viewModel.isSending)
+            .help("重新生成上一条")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+}
+
+struct ToolbarPillButton: View {
+    let icon: String
+    let isActive: Bool
+    var activeColor: Color = DesignToken.blue
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(isActive ? activeColor : .secondary)
+                .frame(width: 26, height: 26)
+                .background(isActive ? activeColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -2065,6 +2506,15 @@ struct SettingsView: View {
                     .onChange(of: viewModel.settings.enableBuiltinTools) { _, _ in viewModel.persistSettings() }
                 Toggle("向 AI 暴露当前工作区路径", isOn: $viewModel.settings.exposeWorkspaceToAI)
                     .onChange(of: viewModel.settings.exposeWorkspaceToAI) { _, _ in viewModel.persistSettings() }
+                Toggle("启用流式输出", isOn: $viewModel.settings.enableStreaming)
+                    .onChange(of: viewModel.settings.enableStreaming) { _, _ in viewModel.persistSettings() }
+                Toggle("YOLO 模式（跳过所有命令确认）", isOn: $viewModel.settings.yoloMode)
+                    .onChange(of: viewModel.settings.yoloMode) { _, _ in viewModel.persistSettings() }
+                if viewModel.settings.yoloMode {
+                    Text("⚠️ YOLO 模式下 AI 的所有工具调用（包括终端命令和文件写入）将自动执行，不再弹出确认。请确保你信任当前模型。")
+                        .font(.caption)
+                        .foregroundStyle(DesignToken.rose)
+                }
                 Stepper("超时时间：\(viewModel.settings.builtinToolTimeout) 秒", value: $viewModel.settings.builtinToolTimeout, in: 3...120, step: 1)
                     .onChange(of: viewModel.settings.builtinToolTimeout) { _, _ in viewModel.persistSettings() }
                 Stepper("连续工具调用轮数：\(viewModel.settings.maxToolRounds)", value: $viewModel.settings.maxToolRounds, in: 0...100, step: 1)

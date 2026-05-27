@@ -151,6 +151,10 @@ final class BuiltinToolExecutor {
         return results
     }
 
+    func executeSingleRequest(_ request: BuiltinToolRequest) async -> BuiltinToolResult {
+        return await executeSafely(request)
+    }
+
     private func executeSafely(_ request: BuiltinToolRequest) async -> BuiltinToolResult {
         do {
             return try await execute(request)
@@ -340,14 +344,17 @@ final class BuiltinToolExecutor {
     }
 
     private func extractJSONObjects(from text: String) -> [String] {
+        // Remove content inside code blocks before parsing
+        let cleaned = removeCodeBlocks(from: text)
+
         var objects: [String] = []
         var startIndex: String.Index?
         var depth = 0
         var isInsideString = false
         var isEscaped = false
 
-        for index in text.indices {
-            let character = text[index]
+        for index in cleaned.indices {
+            let character = cleaned[index]
             if isInsideString {
                 if isEscaped {
                     isEscaped = false
@@ -368,13 +375,34 @@ final class BuiltinToolExecutor {
                 guard depth > 0 else { continue }
                 depth -= 1
                 if depth == 0, let objectStart = startIndex {
-                    let object = String(text[objectStart...index])
+                    let object = String(cleaned[objectStart...index])
                     if object.contains("\"tool\"") || object.contains("\"cmd\"") { objects.append(object) }
                     startIndex = nil
                 }
             }
         }
         return objects
+    }
+
+    private func removeCodeBlocks(from text: String) -> String {
+        var result = text
+        // Remove fenced code blocks (```...```)
+        while let startRange = result.range(of: "```") {
+            if let endRange = result.range(of: "```", range: startRange.upperBound..<result.endIndex) {
+                result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+            } else {
+                result.removeSubrange(startRange.lowerBound..<result.endIndex)
+            }
+        }
+        // Remove inline code (`...`)
+        while let startRange = result.range(of: "`") {
+            if let endRange = result.range(of: "`", range: startRange.upperBound..<result.endIndex) {
+                result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+            } else {
+                break
+            }
+        }
+        return result
     }
 
     private func fetchGitHubTrending(language: String?, since: String) async throws -> String {

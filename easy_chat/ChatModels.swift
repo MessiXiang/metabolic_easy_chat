@@ -97,6 +97,10 @@ struct ChatMessage: Identifiable, Codable, Hashable {
     var attachments: [ChatAttachment] = []
     var toolRuns: [ToolRun] = []
     var toolInvocations: [ToolInvocationRecord] = []
+    var diffs: [FileDiffHunk] = []
+    var tokenCount: Int?
+    var isToolResult: Bool = false
+    var isIntermediateResponse: Bool = false
     var createdAt = Date()
 }
 
@@ -327,6 +331,17 @@ struct ProviderSettings: Codable, Equatable {
     var enableBuiltinTools = true
     var builtinToolTimeout = 20
     var maxToolRounds = 8
+    var enableStreaming = true
+    var yoloMode = false
+}
+
+struct FileDiffHunk: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var filePath: String
+    var oldContent: String
+    var newContent: String
+    var isApplied: Bool = false
+    var isTruncated: Bool = false
 }
 
 enum ChatError: LocalizedError {

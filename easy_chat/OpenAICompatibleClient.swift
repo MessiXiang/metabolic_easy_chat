@@ -30,6 +30,20 @@ final class OpenAICompatibleClient {
         return try await sendChatCompletions(messages: messages)
     }
 
+    func streamChat(messages: [ChatMessage], onDelta: @escaping (String) -> Void) async throws -> ChatMessage {
+        if settings.useResponsesAPI {
+            do {
+                return try await streamResponses(messages: messages, onDelta: onDelta)
+            } catch let error as ChatError {
+                if shouldFallbackToChatCompletions(for: error) {
+                    return try await streamChatCompletions(messages: messages, onDelta: onDelta)
+                }
+                throw error
+            }
+        }
+        return try await streamChatCompletions(messages: messages, onDelta: onDelta)
+    }
+
     func fetchModels() async throws -> [String] {
         let data = try await get(path: settings.modelsPath)
         let response = try JSONDecoder().decode(ModelsResponse.self, from: data)
@@ -79,8 +93,9 @@ final class OpenAICompatibleClient {
         }
         let response = try JSONDecoder().decode(ResponsesAPIResponse.self, from: data)
         let text = response.outputText
+        let tokenCount = response.totalTokens
         guard !text.isEmpty else { throw ChatError.emptyResponse }
-        return ChatMessage(role: .assistant, text: text)
+        return ChatMessage(role: .assistant, text: text, tokenCount: tokenCount)
     }
 
     private func sendChatCompletions(messages: [ChatMessage]) async throws -> ChatMessage {
@@ -99,8 +114,143 @@ final class OpenAICompatibleClient {
         let data = try await post(path: settings.chatCompletionsPath, jsonObject: requestBody)
         let response = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         let text = response.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let tokenCount = response.usage?.totalTokens
         guard !text.isEmpty else { throw ChatError.emptyResponse }
-        return ChatMessage(role: .assistant, text: text)
+        return ChatMessage(role: .assistant, text: text, tokenCount: tokenCount)
+    }
+
+    private func streamChatCompletions(messages: [ChatMessage], onDelta: @escaping (String) -> Void) async throws -> ChatMessage {
+        var mappedMessages = messages.map(chatCompletionMessage)
+        if let developerMessage = developerInstructionMessage() {
+            mappedMessages.insert(developerMessage, at: 0)
+        }
+
+        var requestBody: [String: Any] = [
+            "model": settings.chatModel,
+            "messages": mappedMessages,
+            "stream": true
+        ]
+        applyCommonParameters(to: &requestBody, maxTokenKey: "max_completion_tokens")
+        applyChatCompletionTools(to: &requestBody)
+
+        var fullText = ""
+        var tokenCount: Int?
+        try await streamSSE(path: settings.chatCompletionsPath, jsonObject: requestBody) { eventData in
+            if let delta = Self.parseChatCompletionDelta(eventData) {
+                fullText += delta
+                onDelta(delta)
+            }
+            if let usage = Self.parseChatCompletionUsage(eventData) {
+                tokenCount = usage
+            }
+        }
+        guard !fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.emptyResponse }
+        return ChatMessage(role: .assistant, text: fullText.trimmingCharacters(in: .whitespacesAndNewlines), tokenCount: tokenCount)
+    }
+
+    private func streamResponses(messages: [ChatMessage], onDelta: @escaping (String) -> Void) async throws -> ChatMessage {
+        var requestBody: [String: Any] = [
+            "model": settings.chatModel,
+            "input": messages.map(responseInputItem),
+            "stream": true
+        ]
+        applyCommonParameters(to: &requestBody, maxTokenKey: "max_output_tokens")
+        applyResponsesTools(to: &requestBody)
+        applyInstructionAddons(to: &requestBody)
+
+        var fullText = ""
+        var tokenCount: Int?
+        do {
+            try await streamSSE(path: settings.responsesPath, jsonObject: requestBody) { eventData in
+                if let delta = Self.parseResponsesDelta(eventData) {
+                    fullText += delta
+                    onDelta(delta)
+                }
+                if let usage = Self.parseResponsesUsage(eventData) {
+                    tokenCount = usage
+                }
+            }
+        } catch let error as ChatError {
+            if shouldRetryWithoutWebSearch(for: error, requestBody: requestBody) {
+                var fallbackBody = requestBody
+                removeWebSearchTool(from: &fallbackBody)
+                fullText = ""
+                try await streamSSE(path: settings.responsesPath, jsonObject: fallbackBody) { eventData in
+                    if let delta = Self.parseResponsesDelta(eventData) {
+                        fullText += delta
+                        onDelta(delta)
+                    }
+                    if let usage = Self.parseResponsesUsage(eventData) {
+                        tokenCount = usage
+                    }
+                }
+            } else {
+                throw error
+            }
+        }
+        guard !fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.emptyResponse }
+        return ChatMessage(role: .assistant, text: fullText.trimmingCharacters(in: .whitespacesAndNewlines), tokenCount: tokenCount)
+    }
+
+    private func streamSSE(path: String, jsonObject: [String: Any], timeout: TimeInterval = 300, onEvent: @escaping (Data) -> Void) async throws {
+        guard !settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.missingAPIKey
+        }
+        let body = try JSONSerialization.data(withJSONObject: jsonObject)
+        var request = URLRequest(url: try endpoint(path))
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.timeoutInterval = timeout
+        request.setValue("Bearer \(settings.apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+        let (bytes, response) = try await session.bytes(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var bodyText = ""
+            for try await line in bytes.lines { bodyText += line }
+            throw ChatError.httpError(http.statusCode, bodyText)
+        }
+
+        for try await line in bytes.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "data: [DONE]" { break }
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let jsonString = String(trimmed.dropFirst(6))
+            guard let data = jsonString.data(using: .utf8) else { continue }
+            onEvent(data)
+        }
+    }
+
+    private static func parseChatCompletionDelta(_ data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first,
+              let delta = first["delta"] as? [String: Any],
+              let content = delta["content"] as? String else { return nil }
+        return content
+    }
+
+    private static func parseChatCompletionUsage(_ data: Data) -> Int? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let usage = json["usage"] as? [String: Any],
+              let total = usage["total_tokens"] as? Int else { return nil }
+        return total
+    }
+
+    private static func parseResponsesDelta(_ data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let delta = json["delta"] as? String { return delta }
+        if let contentPart = json["content_part"] as? [String: Any], let text = contentPart["text"] as? String { return text }
+        if let type = json["type"] as? String, type == "response.output_text.delta", let delta = json["delta"] as? String { return delta }
+        return nil
+    }
+
+    private static func parseResponsesUsage(_ data: Data) -> Int? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let usage = json["usage"] as? [String: Any],
+              let total = usage["total_tokens"] as? Int else { return nil }
+        return total
     }
 
     private func shouldFallbackToChatCompletions(for error: ChatError) -> Bool {
@@ -474,7 +624,14 @@ private struct ChatCompletionResponse: Decodable {
         }
         let message: Message
     }
+    struct Usage: Decodable {
+        let totalTokens: Int?
+        enum CodingKeys: String, CodingKey {
+            case totalTokens = "total_tokens"
+        }
+    }
     let choices: [Choice]
+    let usage: Usage?
 }
 
 private struct ModelsResponse: Decodable {
@@ -494,12 +651,21 @@ private struct ResponsesAPIResponse: Decodable {
         let content: [ContentItem]?
     }
 
+    struct Usage: Decodable {
+        let totalTokens: Int?
+        enum CodingKeys: String, CodingKey {
+            case totalTokens = "total_tokens"
+        }
+    }
+
     let outputTextValue: String?
     let output: [OutputItem]?
+    let usage: Usage?
 
     enum CodingKeys: String, CodingKey {
         case outputTextValue = "output_text"
         case output
+        case usage
     }
 
     var outputText: String {
@@ -511,6 +677,10 @@ private struct ResponsesAPIResponse: Decodable {
             .compactMap(\.text)
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var totalTokens: Int? {
+        usage?.totalTokens
     }
 }
 
