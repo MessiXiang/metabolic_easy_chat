@@ -67,4 +67,4 @@ This project stores provider settings locally in the app. Do not commit API keys
 
 ## License
 
-No license has been specified yet.
+Licensed under the [Apache License 2.0](LICENSE).
