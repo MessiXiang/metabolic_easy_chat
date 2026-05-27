@@ -1,13 +1,13 @@
 //
-//  easy_chatUITestsLaunchTests.swift
-//  easy_chatUITests
+//  metabolic_easy_chatUITestsLaunchTests.swift
+//  metabolic_easy_chatUITests
 //
 //  Created by 向滢澔 on 2026/5/19.
 //
 
 import XCTest
 
-final class easy_chatUITestsLaunchTests: XCTestCase {
+final class metabolic_easy_chatUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

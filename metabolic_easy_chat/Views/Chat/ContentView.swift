@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  easy_chat
+//  metabolic_easy_chat
 //
 //  Created by 向滢澔 on 2026/5/19.
 //

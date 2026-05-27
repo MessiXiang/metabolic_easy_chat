@@ -96,13 +96,14 @@ struct SidebarView: View {
                 if viewModel.isMetabolismModeActive {
                     HStack(spacing: 8) {
                         Button {
-                            viewModel.leaveMetabolismMode()
+                            Task { await viewModel.leaveMetabolismMode() }
                         } label: {
                             Label("回到原工作区", systemImage: "arrow.uturn.left")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .font(.callout.weight(.medium))
                         }
                         .buttonStyle(.plain)
+                        .disabled(viewModel.isMetabolismWorking)
                         Button {
                             Task { await viewModel.submitMetabolismPullRequest() }
                         } label: {

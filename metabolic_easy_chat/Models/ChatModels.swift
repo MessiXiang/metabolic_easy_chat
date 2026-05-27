@@ -1,6 +1,6 @@
 //
 //  ChatModels.swift
-//  easy_chat
+//  metabolic_easy_chat
 //
 //  Created by GitHub Copilot on 2026/5/19.
 //

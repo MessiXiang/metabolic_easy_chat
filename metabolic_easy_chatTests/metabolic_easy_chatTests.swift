@@ -1,14 +1,14 @@
 //
-//  easy_chatTests.swift
-//  easy_chatTests
+//  metabolic_easy_chatTests.swift
+//  metabolic_easy_chatTests
 //
 //  Created by 向滢澔 on 2026/5/19.
 //
 
 import Testing
-@testable import easy_chat
+@testable import metabolic_easy_chat
 
-struct easy_chatTests {
+struct metabolic_easy_chatTests {
 
     @Test func markdownParserKeepsIncompleteCodeFenceAsCode() async throws {
         let blocks = MarkdownBlock.parse("```swift\nlet value = 1")

@@ -1,6 +1,6 @@
 //
 //  ChatViewModel.swift
-//  easy_chat
+//  metabolic_easy_chat
 //
 //  Created by GitHub Copilot on 2026/5/19.
 //
@@ -49,8 +49,8 @@ final class ChatViewModel: ObservableObject {
         ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }
 
-    private static let conversationsKey = "easy_chat.conversations"
-    private static let settingsKey = "easy_chat.providerSettings"
+    private static let conversationsKey = "metabolic_easy_chat.conversations"
+    private static let settingsKey = "metabolic_easy_chat.providerSettings"
 
     init() {
         settings = Self.load(key: Self.settingsKey) ?? ProviderSettings()
@@ -441,8 +441,29 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func leaveMetabolismMode() {
+    func leaveMetabolismMode() async {
         guard let session = settings.metabolismSession else { return }
+        guard !isMetabolismWorking else { return }
+        isMetabolismWorking = true
+        defer { isMetabolismWorking = false }
+
+        let metabolismURL = URL(fileURLWithPath: session.workspacePath).standardizedFileURL
+        let environment = terminalEnvironment()
+        let terminalID = createTerminal(title: "metabolism cleanup", command: "/bin/zsh", args: ["-lc", "git push origin --delete \(shellQuote(session.branchName)) || true"], workingDirectory: metabolismURL, environment: environment, startImmediately: false)
+        appendTerminalLine("正在退出新陈代谢模式，并清理一次性分支：\(session.branchName)", kind: .system, to: terminalID)
+        let cleanupResult = await runProcess(command: "/bin/zsh", args: ["-lc", "git push origin --delete \(shellQuote(session.branchName)) || true"], workingDirectory: metabolismURL, environment: environment, timeout: 120, terminalID: terminalID) { _ in }
+        if cleanupResult.status == .completed {
+            appendTerminalLine("远端一次性分支已尝试删除。若分支从未 push，Git 会报告找不到远端分支，可忽略。", kind: .system, to: terminalID)
+        }
+        do {
+            if FileManager.default.fileExists(atPath: metabolismURL.path) {
+                try FileManager.default.removeItem(at: metabolismURL)
+                appendTerminalLine("已删除本地新陈代谢工作区：\(metabolismURL.path)", kind: .system, to: terminalID)
+            }
+        } catch {
+            appendTerminalLine("删除本地新陈代谢工作区失败：\(error.localizedDescription)", kind: .error, to: terminalID)
+        }
+
         settings.metabolismSession = nil
         settings.workspacePath = session.originalWorkspacePath
         settings.workspaceBookmark = session.originalWorkspaceBookmark

@@ -1,13 +1,13 @@
 //
-//  easy_chatUITests.swift
-//  easy_chatUITests
+//  metabolic_easy_chatUITests.swift
+//  metabolic_easy_chatUITests
 //
 //  Created by 向滢澔 on 2026/5/19.
 //
 
 import XCTest
 
-final class easy_chatUITests: XCTestCase {
+final class metabolic_easy_chatUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="easy_chat/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png" alt="easy_chat logo" width="132" height="132">
+  <img src="metabolic_easy_chat/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png" alt="metabolic_easy_chat logo" width="132" height="132">
 </p>
 
-<h1 align="center">easy_chat</h1>
+<h1 align="center">metabolic_easy_chat</h1>
 
 <p align="center">
   A native macOS AI workspace for chat, files, terminal commands, MCP tools, and local skills.
@@ -16,7 +16,7 @@
 
 ## Overview
 
-easy_chat is a SwiftUI macOS app that brings model chat, workspace context, terminal execution, image generation, MCP servers, and reusable skills into one desktop interface. It is designed for coding and research workflows where the assistant needs to see files, run approved commands, and keep the conversation close to the project.
+metabolic_easy_chat is a SwiftUI macOS app that brings model chat, workspace context, terminal execution, image generation, MCP servers, and reusable skills into one desktop interface. It is designed for coding and research workflows where the assistant needs to see files, run approved commands, and keep the conversation close to the project.
 
 ## Features
 
@@ -47,18 +47,18 @@ The static site source lives in `docs/` and is deployed by `.github/workflows/pa
 ## Run Locally
 
 1. Clone the repository.
-2. Open `easy_chat.xcodeproj` in Xcode.
-3. Select the `easy_chat` scheme.
+2. Open `metabolic_easy_chat.xcodeproj` in Xcode.
+3. Select the `metabolic_easy_chat` scheme.
 4. Build and run the app.
 5. Open settings inside the app and configure your API base URL, API key, and model names.
 
 ## Project Structure
 
-- `easy_chat/ContentView.swift`: main SwiftUI interface.
-- `easy_chat/ChatViewModel.swift`: app state, chat flow, workspace actions, and terminal coordination.
-- `easy_chat/OpenAICompatibleClient.swift`: OpenAI-compatible API client.
-- `easy_chat/ToolInvocationService.swift`: tool call handling.
-- `easy_chat/WorkspaceTerminalService.swift`: terminal command execution support.
+- `metabolic_easy_chat/ContentView.swift`: main SwiftUI interface.
+- `metabolic_easy_chat/ChatViewModel.swift`: app state, chat flow, workspace actions, and terminal coordination.
+- `metabolic_easy_chat/OpenAICompatibleClient.swift`: OpenAI-compatible API client.
+- `metabolic_easy_chat/ToolInvocationService.swift`: tool call handling.
+- `metabolic_easy_chat/WorkspaceTerminalService.swift`: terminal command execution support.
 - `docs/`: GitHub Pages promotional site.
 
 ## Notes

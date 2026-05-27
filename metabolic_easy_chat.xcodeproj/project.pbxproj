@@ -12,37 +12,37 @@
 			containerPortal = 4B479FEA2FBC45B600AEE088 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4B479FF12FBC45B600AEE088;
-			remoteInfo = easy_chat;
+			remoteInfo = metabolic_easy_chat;
 		};
 		4B47A00B2FBC45B700AEE088 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4B479FEA2FBC45B600AEE088 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 4B479FF12FBC45B600AEE088;
-			remoteInfo = easy_chat;
+			remoteInfo = metabolic_easy_chat;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		4B479FF22FBC45B600AEE088 /* easy_chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = easy_chat.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		4B47A0002FBC45B700AEE088 /* easy_chatTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = easy_chatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		4B47A00A2FBC45B700AEE088 /* easy_chatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = easy_chatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B479FF22FBC45B600AEE088 /* metabolic_easy_chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = metabolic_easy_chat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B47A0002FBC45B700AEE088 /* metabolic_easy_chatTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = metabolic_easy_chatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B47A00A2FBC45B700AEE088 /* metabolic_easy_chatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = metabolic_easy_chatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		4B479FF42FBC45B600AEE088 /* easy_chat */ = {
+		4B479FF42FBC45B600AEE088 /* metabolic_easy_chat */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = easy_chat;
+			path = metabolic_easy_chat;
 			sourceTree = "<group>";
 		};
-		4B47A0032FBC45B700AEE088 /* easy_chatTests */ = {
+		4B47A0032FBC45B700AEE088 /* metabolic_easy_chatTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = easy_chatTests;
+			path = metabolic_easy_chatTests;
 			sourceTree = "<group>";
 		};
-		4B47A00D2FBC45B700AEE088 /* easy_chatUITests */ = {
+		4B47A00D2FBC45B700AEE088 /* metabolic_easy_chatUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = easy_chatUITests;
+			path = metabolic_easy_chatUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +75,9 @@
 		4B479FE92FBC45B600AEE088 = {
 			isa = PBXGroup;
 			children = (
-				4B479FF42FBC45B600AEE088 /* easy_chat */,
-				4B47A0032FBC45B700AEE088 /* easy_chatTests */,
-				4B47A00D2FBC45B700AEE088 /* easy_chatUITests */,
+				4B479FF42FBC45B600AEE088 /* metabolic_easy_chat */,
+				4B47A0032FBC45B700AEE088 /* metabolic_easy_chatTests */,
+				4B47A00D2FBC45B700AEE088 /* metabolic_easy_chatUITests */,
 				4B479FF32FBC45B600AEE088 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,9 +85,9 @@
 		4B479FF32FBC45B600AEE088 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4B479FF22FBC45B600AEE088 /* easy_chat.app */,
-				4B47A0002FBC45B700AEE088 /* easy_chatTests.xctest */,
-				4B47A00A2FBC45B700AEE088 /* easy_chatUITests.xctest */,
+				4B479FF22FBC45B600AEE088 /* metabolic_easy_chat.app */,
+				4B47A0002FBC45B700AEE088 /* metabolic_easy_chatTests.xctest */,
+				4B47A00A2FBC45B700AEE088 /* metabolic_easy_chatUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		4B479FF12FBC45B600AEE088 /* easy_chat */ = {
+		4B479FF12FBC45B600AEE088 /* metabolic_easy_chat */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4B47A0142FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chat" */;
+			buildConfigurationList = 4B47A0142FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chat" */;
 			buildPhases = (
 				4B479FEE2FBC45B600AEE088 /* Sources */,
 				4B479FEF2FBC45B600AEE088 /* Frameworks */,
@@ -108,18 +108,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				4B479FF42FBC45B600AEE088 /* easy_chat */,
+				4B479FF42FBC45B600AEE088 /* metabolic_easy_chat */,
 			);
-			name = easy_chat;
+			name = metabolic_easy_chat;
 			packageProductDependencies = (
 			);
-			productName = easy_chat;
-			productReference = 4B479FF22FBC45B600AEE088 /* easy_chat.app */;
+			productName = metabolic_easy_chat;
+			productReference = 4B479FF22FBC45B600AEE088 /* metabolic_easy_chat.app */;
 			productType = "com.apple.product-type.application";
 		};
-		4B479FFF2FBC45B700AEE088 /* easy_chatTests */ = {
+		4B479FFF2FBC45B700AEE088 /* metabolic_easy_chatTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4B47A0172FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chatTests" */;
+			buildConfigurationList = 4B47A0172FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chatTests" */;
 			buildPhases = (
 				4B479FFC2FBC45B700AEE088 /* Sources */,
 				4B479FFD2FBC45B700AEE088 /* Frameworks */,
@@ -131,18 +131,18 @@
 				4B47A0022FBC45B700AEE088 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				4B47A0032FBC45B700AEE088 /* easy_chatTests */,
+				4B47A0032FBC45B700AEE088 /* metabolic_easy_chatTests */,
 			);
-			name = easy_chatTests;
+			name = metabolic_easy_chatTests;
 			packageProductDependencies = (
 			);
-			productName = easy_chatTests;
-			productReference = 4B47A0002FBC45B700AEE088 /* easy_chatTests.xctest */;
+			productName = metabolic_easy_chatTests;
+			productReference = 4B47A0002FBC45B700AEE088 /* metabolic_easy_chatTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		4B47A0092FBC45B700AEE088 /* easy_chatUITests */ = {
+		4B47A0092FBC45B700AEE088 /* metabolic_easy_chatUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4B47A01A2FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chatUITests" */;
+			buildConfigurationList = 4B47A01A2FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chatUITests" */;
 			buildPhases = (
 				4B47A0062FBC45B700AEE088 /* Sources */,
 				4B47A0072FBC45B700AEE088 /* Frameworks */,
@@ -154,13 +154,13 @@
 				4B47A00C2FBC45B700AEE088 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				4B47A00D2FBC45B700AEE088 /* easy_chatUITests */,
+				4B47A00D2FBC45B700AEE088 /* metabolic_easy_chatUITests */,
 			);
-			name = easy_chatUITests;
+			name = metabolic_easy_chatUITests;
 			packageProductDependencies = (
 			);
-			productName = easy_chatUITests;
-			productReference = 4B47A00A2FBC45B700AEE088 /* easy_chatUITests.xctest */;
+			productName = metabolic_easy_chatUITests;
+			productReference = 4B47A00A2FBC45B700AEE088 /* metabolic_easy_chatUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 4B479FED2FBC45B600AEE088 /* Build configuration list for PBXProject "easy_chat" */;
+			buildConfigurationList = 4B479FED2FBC45B600AEE088 /* Build configuration list for PBXProject "metabolic_easy_chat" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -200,9 +200,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4B479FF12FBC45B600AEE088 /* easy_chat */,
-				4B479FFF2FBC45B700AEE088 /* easy_chatTests */,
-				4B47A0092FBC45B700AEE088 /* easy_chatUITests */,
+				4B479FF12FBC45B600AEE088 /* metabolic_easy_chat */,
+				4B479FFF2FBC45B700AEE088 /* metabolic_easy_chatTests */,
+				4B47A0092FBC45B700AEE088 /* metabolic_easy_chatUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +258,12 @@
 /* Begin PBXTargetDependency section */
 		4B47A0022FBC45B700AEE088 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4B479FF12FBC45B600AEE088 /* easy_chat */;
+			target = 4B479FF12FBC45B600AEE088 /* metabolic_easy_chat */;
 			targetProxy = 4B47A0012FBC45B700AEE088 /* PBXContainerItemProxy */;
 		};
 		4B47A00C2FBC45B700AEE088 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4B479FF12FBC45B600AEE088 /* easy_chat */;
+			target = 4B479FF12FBC45B600AEE088 /* metabolic_easy_chat */;
 			targetProxy = 4B47A00B2FBC45B700AEE088 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -395,7 +395,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = easy_chat/easy_chat.entitlements;
+				CODE_SIGN_ENTITLEMENTS = metabolic_easy_chat/metabolic_easy_chat.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
@@ -411,7 +411,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.0.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chat";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chat";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -425,7 +425,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = easy_chat/easy_chat.entitlements;
+				CODE_SIGN_ENTITLEMENTS = metabolic_easy_chat/metabolic_easy_chat.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
@@ -441,7 +441,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.0.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chat";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chat";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -459,11 +459,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chatTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chatTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/easy_chat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/easy_chat";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/metabolic_easy_chat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/metabolic_easy_chat";
 			};
 			name = Debug;
 		};
@@ -477,11 +477,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chatTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chatTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/easy_chat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/easy_chat";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/metabolic_easy_chat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/metabolic_easy_chat";
 			};
 			name = Release;
 		};
@@ -493,11 +493,11 @@
 				DEVELOPMENT_TEAM = G78YGD8GUU;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chatUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chatUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = easy_chat;
+				TEST_TARGET_NAME = metabolic_easy_chat;
 			};
 			name = Debug;
 		};
@@ -509,18 +509,18 @@
 				DEVELOPMENT_TEAM = G78YGD8GUU;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.easy-chatUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "xiangyinghao.metabolic-easy-chatUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = easy_chat;
+				TEST_TARGET_NAME = metabolic_easy_chat;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4B479FED2FBC45B600AEE088 /* Build configuration list for PBXProject "easy_chat" */ = {
+		4B479FED2FBC45B600AEE088 /* Build configuration list for PBXProject "metabolic_easy_chat" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4B47A0122FBC45B700AEE088 /* Debug */,
@@ -529,7 +529,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4B47A0142FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chat" */ = {
+		4B47A0142FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chat" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4B47A0152FBC45B700AEE088 /* Debug */,
@@ -538,7 +538,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4B47A0172FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chatTests" */ = {
+		4B47A0172FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chatTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4B47A0182FBC45B700AEE088 /* Debug */,
@@ -547,7 +547,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4B47A01A2FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "easy_chatUITests" */ = {
+		4B47A01A2FBC45B700AEE088 /* Build configuration list for PBXNativeTarget "metabolic_easy_chatUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4B47A01B2FBC45B700AEE088 /* Debug */,
