@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="http://buaa.spotterblog.cn/easy_chat/">Website</a>
+  <a href="http://buaa.spotterblog.cn/metabolic_easy_chat/">Website</a>
   ·
-  <a href="https://github.com/MessiXiang/easy_chat">Repository</a>
+  <a href="https://github.com/MessiXiang/metabolic_easy_chat">Repository</a>
 </p>
 
 ## Overview
@@ -34,7 +34,7 @@ easy_chat is a SwiftUI macOS app that brings model chat, workspace context, term
 
 The promotional site is published with GitHub Pages:
 
-<http://buaa.spotterblog.cn/easy_chat/>
+<http://buaa.spotterblog.cn/metabolic_easy_chat/>
 
 The static site source lives in `docs/` and is deployed by `.github/workflows/pages.yml`.
 
