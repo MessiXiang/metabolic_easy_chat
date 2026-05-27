@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>easy_chat - macOS AI 工作台</title>
+  <meta name="description" content="easy_chat 是一款面向 macOS 的轻量 AI 工作台，支持 OpenAI 兼容接口、文件上下文、终端执行、MCP 与 Skills。">
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#hero" aria-label="easy_chat 首页">
+      <span class="brand-mark">e</span>
+      <span>easy_chat</span>
+    </a>
+    <nav aria-label="主要导航">
+      <a href="#features">能力</a>
+      <a href="#workflow">工作流</a>
+      <a href="https://github.com/MessiXiang/easy_chat">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">macOS native AI workspace</p>
+        <h1>easy_chat</h1>
+        <p class="lead">把聊天、文件上下文、终端执行、MCP 工具和 Skills 放进一个安静高效的桌面工作台。</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/MessiXiang/easy_chat">查看源码</a>
+          <a class="button ghost" href="#features">了解能力</a>
+        </div>
+      </div>
+      <div class="product-shell" aria-label="easy_chat 界面预览">
+        <div class="window-bar"><span></span><span></span><span></span></div>
+        <div class="app-grid">
+          <aside>
+            <b>新对话</b>
+            <span>图片生成</span>
+            <span>MCP 工具</span>
+            <span>Skills</span>
+          </aside>
+          <section class="chat-pane">
+            <div class="bubble user">把这个 Swift 文件加入上下文</div>
+            <div class="bubble ai">已读取文件。可以继续修改 UI、运行命令或生成补丁。</div>
+            <div class="composer">询问、生成图片或执行工作区任务</div>
+          </section>
+          <aside class="workspace-pane">
+            <b>Workspace</b>
+            <span>ContentView.swift</span>
+            <span>ChatViewModel.swift</span>
+            <div class="terminal">$ swift build<br>ready</div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="feature-band" id="features">
+      <div class="section-heading">
+        <p class="eyebrow">core features</p>
+        <h2>为真实开发流设计</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card"><span>01</span><h3>OpenAI 兼容</h3><p>支持自定义 API、模型列表、Responses API 与 Chat Completions。</p></article>
+        <article class="feature-card"><span>02</span><h3>文件上下文</h3><p>打开工作区后浏览文件树，把相关文件直接送入聊天上下文。</p></article>
+        <article class="feature-card"><span>03</span><h3>内置终端</h3><p>在应用内运行命令，并通过审批流程保持执行过程可控。</p></article>
+        <article class="feature-card"><span>04</span><h3>MCP 与 Skills</h3><p>接入外部工具和本地知识包，让助手按项目需要扩展能力。</p></article>
+      </div>
+    </section>
+
+    <section class="workflow" id="workflow">
+      <div>
+        <p class="eyebrow">workflow</p>
+        <h2>从想法到变更，路径更短</h2>
+      </div>
+      <ol class="steps">
+        <li><b>连接模型</b><span>配置兼容 OpenAI 的服务与默认模型。</span></li>
+        <li><b>打开工作区</b><span>把代码文件、终端和对话放在同一上下文。</span></li>
+        <li><b>生成与执行</b><span>流式回复、图片生成、补丁应用和命令执行一起完成。</span></li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    <span>easy_chat</span>
+    <a href="https://github.com/MessiXiang/easy_chat">github.com/MessiXiang/easy_chat</a>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
