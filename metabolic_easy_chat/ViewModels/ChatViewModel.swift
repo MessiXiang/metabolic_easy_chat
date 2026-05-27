@@ -718,7 +718,7 @@ final class ChatViewModel: ObservableObject {
         for _ in 0..<max(settings.maxToolRounds, 0) {
             try Task.checkCancellation()
             guard !shouldStopResponse else { return }
-            let invocations = Array(toolService.extractInvocations(from: currentMessage.text).prefix(8))
+            let invocations = toolService.extractInvocations(from: currentMessage.text)
             guard !invocations.isEmpty else { return }
 
             // Execute each tool invocation immediately as we process them
