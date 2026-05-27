@@ -26,6 +26,7 @@ final class ChatViewModel: ObservableObject {
     @Published var pendingImages: [ChatImage] = []
     @Published var pendingAttachments: [ChatAttachment] = []
     @Published var workspaceFiles: [WorkspaceFileItem] = []
+    @Published var collapsedWorkspaceFolders: Set<String> = []
     @Published var selectedWorkspaceFile: WorkspaceFileItem?
     @Published var selectedWorkspaceFilePreview = ""
     @Published var terminals: [WorkspaceTerminalSession] = []
@@ -39,6 +40,8 @@ final class ChatViewModel: ObservableObject {
     private var terminalProcesses: [WorkspaceTerminalSession.ID: Process] = [:]
     private var terminalInputHandles: [WorkspaceTerminalSession.ID: FileHandle] = [:]
     private var activeResponseTask: Task<Void, Never>?
+    private var streamingFlushTask: Task<Void, Never>?
+    private var pendingStreamingDelta = ""
     private var shouldStopResponse = false
 
     private var isRunningInAppSandbox: Bool {
@@ -69,6 +72,14 @@ final class ChatViewModel: ObservableObject {
 
     var workspaceDisplayName: String {
         workspaceURL?.lastPathComponent ?? "未打开工作区"
+    }
+
+    var visibleWorkspaceFiles: [WorkspaceFileItem] {
+        workspaceFiles.filter { item in
+            !collapsedWorkspaceFolders.contains { folder in
+                item.relativePath != folder && item.relativePath.hasPrefix(folder + "/")
+            }
+        }
     }
 
     var selectedTerminal: WorkspaceTerminalSession? {
@@ -260,6 +271,7 @@ final class ChatViewModel: ObservableObject {
         shouldStopResponse = true
         activeResponseTask?.cancel()
         activeResponseTask = nil
+        commitStreamingDisplayAsStoppedMessage()
         isSending = false
         pendingTerminalApproval?.deny()
         pendingTerminalApproval = nil
@@ -355,12 +367,15 @@ final class ChatViewModel: ObservableObject {
     func refreshWorkspaceFiles() {
         guard let workspaceURL else {
             workspaceFiles = []
+            collapsedWorkspaceFolders = []
             selectedWorkspaceFile = nil
             selectedWorkspaceFilePreview = ""
             return
         }
         do {
             workspaceFiles = try listWorkspaceFiles(root: workspaceURL)
+            let existingFolders = Set(workspaceFiles.filter(\.isDirectory).map(\.relativePath))
+            collapsedWorkspaceFolders = collapsedWorkspaceFolders.intersection(existingFolders)
             if let selectedWorkspaceFile, !FileManager.default.fileExists(atPath: selectedWorkspaceFile.url.path) {
                 self.selectedWorkspaceFile = nil
                 selectedWorkspaceFilePreview = ""
@@ -368,6 +383,19 @@ final class ChatViewModel: ObservableObject {
         } catch {
             showAlert(error.localizedDescription)
         }
+    }
+
+    func toggleWorkspaceFolder(_ item: WorkspaceFileItem) {
+        guard item.isDirectory else { return }
+        if collapsedWorkspaceFolders.contains(item.relativePath) {
+            collapsedWorkspaceFolders.remove(item.relativePath)
+        } else {
+            collapsedWorkspaceFolders.insert(item.relativePath)
+        }
+    }
+
+    func isWorkspaceFolderCollapsed(_ item: WorkspaceFileItem) -> Bool {
+        item.isDirectory && collapsedWorkspaceFolders.contains(item.relativePath)
     }
 
     func selectWorkspaceFile(_ item: WorkspaceFileItem) {
@@ -467,10 +495,10 @@ final class ChatViewModel: ObservableObject {
     private func requestAssistantResponse(context: [ChatMessage], imagePrompt: String) async {
         guard !isSending else { return }
         isSending = true
-        streamingText = ""
+        resetStreamingDisplay()
         defer {
+            resetStreamingDisplay()
             isSending = false
-            streamingText = ""
             activeResponseTask = nil
         }
         let shouldGenerateTitle = selectedConversation?.title == "新对话" && context.contains { $0.role == .user }
@@ -486,9 +514,10 @@ final class ChatViewModel: ObservableObject {
             } else if settings.enableStreaming {
                 assistantMessage = try await client.streamChat(messages: context) { [weak self] delta in
                     Task { @MainActor in
-                        self?.streamingText += delta
+                        self?.appendStreamingDelta(delta)
                     }
                 }
+                flushStreamingDisplay()
                 try Task.checkCancellation()
                 guard !shouldStopResponse else { return }
                 // If tool calls detected, truncate to only the JSON portion
@@ -578,7 +607,7 @@ final class ChatViewModel: ObservableObject {
                 allResults.append(result)
 
                 // Update UI immediately after each tool completes
-                mergeToolInvocationResults(for: currentMessage.id, results: [result])
+                mergeToolInvocationResult(for: currentMessage.id, invocationID: invocation.id, result: result)
             }
 
             guard !allResults.isEmpty else { return }
@@ -592,11 +621,12 @@ final class ChatViewModel: ObservableObject {
             toolMessage.isToolResult = true
             var finalMessage: ChatMessage
             if settings.enableStreaming {
-                streamingText = ""
+                resetStreamingDisplay()
                 finalMessage = try await client.streamChat(messages: currentContext + [toolMessage]) { [weak self] delta in
-                    Task { @MainActor in self?.streamingText += delta }
+                    Task { @MainActor in self?.appendStreamingDelta(delta) }
                 }
-                streamingText = ""
+                flushStreamingDisplay()
+                resetStreamingDisplay()
             } else {
                 finalMessage = try await client.sendChat(messages: currentContext + [toolMessage])
             }
@@ -771,6 +801,49 @@ final class ChatViewModel: ObservableObject {
         return result
     }
 
+    private func appendStreamingDelta(_ delta: String) {
+        pendingStreamingDelta += delta
+        guard streamingFlushTask == nil else { return }
+        streamingFlushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            await MainActor.run {
+                guard let self else { return }
+                self.flushStreamingDisplay()
+            }
+        }
+    }
+
+    private func flushStreamingDisplay() {
+        guard !pendingStreamingDelta.isEmpty else {
+            streamingFlushTask = nil
+            return
+        }
+        streamingText += pendingStreamingDelta
+        pendingStreamingDelta = ""
+        streamingFlushTask = nil
+    }
+
+    private func resetStreamingDisplay() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        pendingStreamingDelta = ""
+        streamingText = ""
+    }
+
+    private func commitStreamingDisplayAsStoppedMessage() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        flushStreamingDisplay()
+        let partialText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingStreamingDelta = ""
+        streamingText = ""
+        guard !partialText.isEmpty else { return }
+        var message = ChatMessage(role: .assistant, text: partialText)
+        let diffs = extractDiffs(from: partialText)
+        if !diffs.isEmpty { message.diffs = diffs }
+        append(message)
+    }
+
     @discardableResult
     private func createTerminal(title: String, command: String, args: [String], workingDirectory: URL? = nil, environment: [String: String]? = nil, startImmediately: Bool) -> WorkspaceTerminalSession.ID {
         let cwd = workingDirectory ?? workspaceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -888,16 +961,14 @@ final class ChatViewModel: ObservableObject {
         persistConversations()
     }
 
-    private func mergeToolInvocationResults(for messageID: ChatMessage.ID, results: [BuiltinToolResult]) {
+    private func mergeToolInvocationResult(for messageID: ChatMessage.ID, invocationID: String, result: BuiltinToolResult) {
         guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
-        for result in results {
-            if let recordIndex = conversations[conversationIndex].messages[messageIndex].toolInvocations.firstIndex(where: { result.title.localizedCaseInsensitiveContains($0.toolName) || result.title.localizedCaseInsensitiveContains($0.displayName) }) {
-                conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].output = result.output
-                conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].status = result.status
-                conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isComplete = true
-                if conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed == nil {
-                    conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed = result.status == .completed
-                }
+        if let recordIndex = conversations[conversationIndex].messages[messageIndex].toolInvocations.firstIndex(where: { $0.id == invocationID }) {
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].output = result.output
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].status = result.status
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isComplete = true
+            if conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed == nil {
+                conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed = result.status == .completed
             }
         }
         conversations[conversationIndex].updatedAt = Date()
@@ -1077,6 +1148,9 @@ final class ChatViewModel: ObservableObject {
         if screen.lines.count > 500 {
             let removed = screen.lines.count - 500
             screen.lines.removeFirst(removed)
+            if screen.styledLines.count >= removed {
+                screen.styledLines.removeFirst(removed)
+            }
             screen.cursorRow = max(0, screen.cursorRow - removed)
         }
         terminals[index].screen = screen
@@ -1116,6 +1190,7 @@ final class ChatViewModel: ObservableObject {
         case "J":
             if values.first ?? 0 == 2 {
                 screen.lines = [""]
+                screen.styledLines = [[]]
                 screen.cursorRow = 0
                 screen.cursorColumn = 0
             }
@@ -1124,23 +1199,87 @@ final class ChatViewModel: ObservableObject {
             let line = screen.lines[screen.cursorRow]
             if screen.cursorColumn < line.count {
                 screen.lines[screen.cursorRow] = String(line.prefix(screen.cursorColumn))
+                screen.styledLines[screen.cursorRow] = Array(screen.styledLines[screen.cursorRow].prefix(screen.cursorColumn))
             }
         case "m":
-            break
+            applySGR(parameters: parameters, screen: &screen)
         default:
             break
+        }
+    }
+
+    private func applySGR(parameters: String, screen: inout TerminalScreen) {
+        let codes = parameters.isEmpty ? [0] : parameters.split(separator: ";", omittingEmptySubsequences: false).map { Int($0) ?? 0 }
+        var index = 0
+        while index < codes.count {
+            let code = codes[index]
+            switch code {
+            case 0:
+                screen.currentStyle = .normal
+            case 1:
+                screen.currentStyle.isBold = true
+            case 2:
+                screen.currentStyle.isDim = true
+            case 4:
+                screen.currentStyle.isUnderlined = true
+            case 7:
+                screen.currentStyle.isInverse = true
+            case 22:
+                screen.currentStyle.isBold = false
+                screen.currentStyle.isDim = false
+            case 24:
+                screen.currentStyle.isUnderlined = false
+            case 27:
+                screen.currentStyle.isInverse = false
+            case 30...37:
+                screen.currentStyle.foregroundIndex = code - 30
+            case 39:
+                screen.currentStyle.foregroundIndex = nil
+            case 40...47:
+                screen.currentStyle.backgroundIndex = code - 40
+            case 49:
+                screen.currentStyle.backgroundIndex = nil
+            case 90...97:
+                screen.currentStyle.foregroundIndex = code - 90 + 8
+            case 100...107:
+                screen.currentStyle.backgroundIndex = code - 100 + 8
+            case 38, 48:
+                if index + 2 < codes.count, codes[index + 1] == 5 {
+                    let colorIndex = codes[index + 2]
+                    if code == 38 {
+                        screen.currentStyle.foregroundIndex = colorIndex
+                    } else {
+                        screen.currentStyle.backgroundIndex = colorIndex
+                    }
+                    index += 2
+                } else if index + 4 < codes.count, codes[index + 1] == 2 {
+                    let colorIndex = 16 + min(215, max(0, codes[index + 2] / 51) * 36 + max(0, codes[index + 3] / 51) * 6 + max(0, codes[index + 4] / 51))
+                    if code == 38 {
+                        screen.currentStyle.foregroundIndex = colorIndex
+                    } else {
+                        screen.currentStyle.backgroundIndex = colorIndex
+                    }
+                    index += 4
+                }
+            default:
+                break
+            }
+            index += 1
         }
     }
 
     private func insertPrintable(_ text: String, into screen: inout TerminalScreen) {
         ensureScreenRow(&screen)
         padLine(&screen.lines[screen.cursorRow], to: screen.cursorColumn)
+        padStyledLine(&screen.styledLines[screen.cursorRow], to: screen.cursorColumn, style: screen.currentStyle)
         var line = screen.lines[screen.cursorRow]
         let index = line.index(line.startIndex, offsetBy: screen.cursorColumn)
         if index < line.endIndex {
             line.replaceSubrange(index...index, with: text)
+            screen.styledLines[screen.cursorRow][screen.cursorColumn] = TerminalCell(text: text, style: screen.currentStyle)
         } else {
             line.append(text)
+            screen.styledLines[screen.cursorRow].append(TerminalCell(text: text, style: screen.currentStyle))
         }
         screen.lines[screen.cursorRow] = line
         screen.cursorColumn += text.count
@@ -1149,10 +1288,12 @@ final class ChatViewModel: ObservableObject {
     private func replaceCharacter(in screen: inout TerminalScreen, at column: Int, with text: String) {
         ensureScreenRow(&screen)
         padLine(&screen.lines[screen.cursorRow], to: column)
+        padStyledLine(&screen.styledLines[screen.cursorRow], to: column, style: screen.currentStyle)
         var line = screen.lines[screen.cursorRow]
         let index = line.index(line.startIndex, offsetBy: column)
         if index < line.endIndex {
             line.replaceSubrange(index...index, with: text)
+            screen.styledLines[screen.cursorRow][column] = TerminalCell(text: text, style: screen.currentStyle)
         }
         screen.lines[screen.cursorRow] = line
     }
@@ -1160,12 +1301,22 @@ final class ChatViewModel: ObservableObject {
     private func ensureScreenRow(_ screen: inout TerminalScreen) {
         while screen.cursorRow >= screen.lines.count {
             screen.lines.append("")
+            screen.styledLines.append([])
+        }
+        while screen.cursorRow >= screen.styledLines.count {
+            screen.styledLines.append([])
         }
     }
 
     private func padLine(_ line: inout String, to column: Int) {
         if line.count < column {
             line += String(repeating: " ", count: column - line.count)
+        }
+    }
+
+    private func padStyledLine(_ line: inout [TerminalCell], to column: Int, style: TerminalTextStyle) {
+        while line.count < column {
+            line.append(TerminalCell(text: " ", style: style))
         }
     }
 

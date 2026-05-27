@@ -241,6 +241,22 @@ struct WorkspaceFileItem: Identifiable, Hashable {
     var depth: Int
 }
 
+struct TerminalTextStyle: Hashable {
+    var foregroundIndex: Int?
+    var backgroundIndex: Int?
+    var isBold = false
+    var isDim = false
+    var isUnderlined = false
+    var isInverse = false
+
+    static let normal = TerminalTextStyle()
+}
+
+struct TerminalCell: Hashable {
+    var text: String
+    var style: TerminalTextStyle = .normal
+}
+
 struct TerminalLine: Identifiable, Hashable {
     var id = UUID()
     var text: String
@@ -280,11 +296,25 @@ struct WorkspaceTerminalSession: Identifiable, Hashable {
 
 struct TerminalScreen: Hashable {
     var lines: [String] = [""]
+    var styledLines: [[TerminalCell]] = [[]]
     var cursorRow = 0
     var cursorColumn = 0
+    var currentStyle = TerminalTextStyle.normal
+
+    init(lines: [String] = [""], cursorRow: Int = 0, cursorColumn: Int = 0, currentStyle: TerminalTextStyle = .normal) {
+        self.lines = lines
+        self.styledLines = lines.map { line in line.map { TerminalCell(text: String($0), style: currentStyle) } }
+        self.cursorRow = cursorRow
+        self.cursorColumn = cursorColumn
+        self.currentStyle = currentStyle
+    }
 
     var visibleLines: [String] {
         Array(lines.suffix(120))
+    }
+
+    var visibleStyledLines: [[TerminalCell]] {
+        Array(styledLines.suffix(120))
     }
 }
 
