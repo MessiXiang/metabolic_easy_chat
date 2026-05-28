@@ -45,7 +45,16 @@ struct ContentView: View {
                 .animation(.spring(response: 0.38, dampingFraction: 0.84), value: isWorkspacePanelCollapsed)
             }
             .scrollContentBackground(.hidden)
+
+            if viewModel.isShowingAlert {
+                BoundedAlertView(message: viewModel.alertMessage) {
+                    viewModel.isShowingAlert = false
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .zIndex(1)
+            }
         }
+        .animation(.spring(response: 0.24, dampingFraction: 0.88), value: viewModel.isShowingAlert)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -64,16 +73,56 @@ struct ContentView: View {
         .sheet(isPresented: $viewModel.isShowingSettings) {
             SettingsView(viewModel: viewModel)
         }
-        .alert("提示", isPresented: $viewModel.isShowingAlert) {
-            Button("知道了", role: .cancel) { }
-        } message: {
-            Text(viewModel.alertMessage)
-        }
         .sheet(item: $viewModel.pendingTerminalApproval) { request in
             TerminalApprovalView(request: request, viewModel: viewModel)
         }
         .onAppear {
             inputFocused = true
+        }
+    }
+}
+
+private struct BoundedAlertView: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.22)
+                    .ignoresSafeArea()
+                    .onTapGesture(perform: onDismiss)
+
+                VStack(spacing: 16) {
+                    Text("提示")
+                        .font(.headline)
+                        .foregroundStyle(DesignToken.ink)
+
+                    ScrollView {
+                        Text(message)
+                            .font(.body)
+                            .foregroundStyle(DesignToken.ink)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: max(120, proxy.size.height * 0.5 - 112))
+
+                    Button("知道了", action: onDismiss)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(DesignToken.blue)
+                }
+                .padding(24)
+                .frame(width: min(520, proxy.size.width - 48))
+                .frame(maxHeight: proxy.size.height * 0.5)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                )
+                .shadow(color: DesignToken.shadow, radius: 24, y: 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 }
