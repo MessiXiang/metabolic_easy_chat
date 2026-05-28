@@ -122,8 +122,9 @@ h3 { margin-bottom: 10px; font-size: 21px; }
 .workspace-pane { border-left: 1px solid var(--line); border-right: 0; }
 .terminal { margin-top: auto; padding: 14px; color: #d6f5e7; background: var(--charcoal); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-.feature-band, .workflow, .install { padding: 86px clamp(20px, 5vw, 72px); }
+.feature-band, .workflow, .metabolism, .install { padding: 86px clamp(20px, 5vw, 72px); }
 .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 32px; }
+.section-note { max-width: 420px; margin: 0; color: var(--muted); line-height: 1.6; }
 .feature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .feature-card {
   min-height: 240px;
@@ -138,6 +139,56 @@ h3 { margin-bottom: 10px; font-size: 21px; }
 .workflow { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; background: #eef3f6; }
 .steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .steps li { display: grid; grid-template-columns: 150px 1fr; gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+
+.metabolism {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(24, 167, 122, 0.16), transparent 30%),
+    radial-gradient(circle at 88% 0%, rgba(31, 111, 235, 0.18), transparent 28%),
+    var(--charcoal);
+  color: var(--white);
+}
+.metabolism .section-note { color: rgba(255, 255, 255, 0.68); }
+.metabolism-flow {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(220px, 1fr));
+  gap: 14px;
+}
+.metabolism-flow::before {
+  content: "";
+  position: absolute;
+  top: 56px;
+  left: 32px;
+  right: 32px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--mint), var(--blue), var(--coral));
+  opacity: 0.7;
+}
+.metabolism-card {
+  position: relative;
+  min-height: 260px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px);
+}
+.metabolism-card span {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 56px;
+  border-radius: 50%;
+  color: var(--charcoal);
+  background: var(--white);
+  font-weight: 950;
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.08);
+}
+.metabolism-card h3 { color: var(--white); }
+.metabolism-card p { margin-bottom: 0; color: rgba(255, 255, 255, 0.70); line-height: 1.65; }
 
 .install { background: var(--white); }
 .install .section-heading { align-items: center; }
@@ -179,6 +230,8 @@ footer { justify-content: space-between; padding: 24px clamp(20px, 5vw, 72px); c
   .hero, .workflow { grid-template-columns: 1fr; }
   .product-shell { min-height: auto; }
   .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metabolism-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metabolism-flow::before { display: none; }
   .install-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -190,6 +243,7 @@ footer { justify-content: space-between; padding: 24px clamp(20px, 5vw, 72px); c
   .app-grid aside, .workspace-pane { display: none; }
   .feature-grid { grid-template-columns: 1fr; }
   .section-heading, footer { align-items: flex-start; flex-direction: column; }
+  .metabolism-flow { grid-template-columns: 1fr; }
   .install-steps { grid-template-columns: 1fr; }
   .steps li { grid-template-columns: 1fr; gap: 8px; }
 }

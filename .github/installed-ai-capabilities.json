@@ -1,0 +1,61 @@
+{
+  "installed": [
+    {
+      "id": "gsap-core",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-core"
+    },
+    {
+      "id": "gsap-frameworks",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-frameworks"
+    },
+    {
+      "id": "gsap-plugins",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-plugins"
+    },
+    {
+      "id": "gsap-react",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-react"
+    },
+    {
+      "id": "gsap-scrolltrigger",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-scrolltrigger"
+    },
+    {
+      "id": "gsap-timeline",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-timeline"
+    },
+    {
+      "id": "gsap-utils",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-utils"
+    },
+    {
+      "id": "gsap-performance",
+      "category": "skill",
+      "source": "greensock/gsap-skills",
+      "branch": "main",
+      "targetPath": ".github/skills/gsap-performance"
+    }
+  ],
+  "updatedAt": "2026-05-28T03:30:01.129Z"
+}
