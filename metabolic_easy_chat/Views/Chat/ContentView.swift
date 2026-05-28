@@ -113,7 +113,8 @@ private struct BoundedAlertView: View {
                         .tint(DesignToken.blue)
                 }
                 .padding(24)
-                .frame(width: min(520, proxy.size.width - 48), maxHeight: proxy.size.height * 0.5)
+                .frame(width: min(520, proxy.size.width - 48))
+                .frame(maxHeight: proxy.size.height * 0.5)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
