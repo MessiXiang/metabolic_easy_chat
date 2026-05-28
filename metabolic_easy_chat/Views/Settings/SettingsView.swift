@@ -442,4 +442,6 @@ struct SkillRow: View {
         }
         .padding(14)
         .background(Color(red: 0.99, green: 0.98, blue: 0.95), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(Roun
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(DesignToken.border))
+    }
+}

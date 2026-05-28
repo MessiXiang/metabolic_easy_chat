@@ -1,6 +1,6 @@
 //
 //  ChatViewModel.swift
-//  metabolic_easy_chat
+//  easy_chat
 //
 //  Created by GitHub Copilot on 2026/5/19.
 //
@@ -49,8 +49,8 @@ final class ChatViewModel: ObservableObject {
         ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }
 
-    private static let conversationsKey = "metabolic_easy_chat.conversations"
-    private static let settingsKey = "metabolic_easy_chat.providerSettings"
+    private static let conversationsKey = "easy_chat.conversations"
+    private static let settingsKey = "easy_chat.providerSettings"
 
     init() {
         settings = Self.load(key: Self.settingsKey) ?? ProviderSettings()
@@ -419,13 +419,11 @@ final class ChatViewModel: ObservableObject {
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let login = authLines.last ?? ""
-        let isGitHubReady = authResult.status == .completed && !login.isEmpty
-        guard isGitHubReady else {
+        let ghUser = authLines.last ?? ""
+        guard authResult.status == .completed && !ghUser.isEmpty else {
             showAlert("GitHub CLI 登录或权限检查失败。请确认设置中的 Token 有访问仓库和创建 PR 所需权限（建议 repo 权限）。\n获取链接：https://github.com/settings/tokens")
             return
         }
-        let ghUser = login
 
         let branchName = "\(ghUser)_\(random)"
 
@@ -457,12 +455,1323 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func leaveMetabolismMode() async {
+    func leaveMetabolismMode() {
         guard let session = settings.metabolismSession else { return }
+        settings.metabolismSession = nil
+        settings.workspacePath = session.originalWorkspacePath
+        settings.workspaceBookmark = session.originalWorkspaceBookmark
+        persistSettings()
+        refreshWorkspaceFiles()
+        appendTerminalLine("已退出新陈代谢模式，回到原工作区。", kind: .system, to: selectedTerminalID)
+    }
+
+    func submitMetabolismPullRequest() async {
+        guard let session = settings.metabolismSession, let workspaceURL else { return }
         guard !isMetabolismWorking else { return }
         isMetabolismWorking = true
         defer { isMetabolismWorking = false }
 
-        let metabolismURL = URL(fileURLWithPath: session.workspacePath).standardizedFileURL
         let environment = terminalEnvironment()
-        let terminalID = createTerminal(title: "metabolism cleanup", 
+        let authResult = await terminalService.run(command: "/usr/bin/env", args: ["zsh", "-lc", "command -v gh >/dev/null 2>&1 && gh auth status -h github.com >/dev/null 2>&1"], workingDirectory: workspaceURL, environment: environment, timeout: 12) { _ in }
+        guard authResult.status == .completed else {
+            openGitHubLoginTerminal(workingDirectory: workspaceURL, missingGH: false)
+            showAlert("提交 PR 需要 gh 已安装并登录 GitHub。请在终端中用 Personal Access Token 登录后再试。")
+            return
+        }
+
+        let statusResult = await terminalService.run(command: "/usr/bin/env", args: ["zsh", "-lc", "git status --short"], workingDirectory: workspaceURL, environment: environment, timeout: 20) { _ in }
+        guard !statusResult.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            showAlert("当前新陈代谢工作区没有可提交的改动。")
+            return
+        }
+
+        let commitMessage = await generateMetabolismCommitMessage(status: statusResult.output)
+        let command = "git add -A && git commit -m \(shellQuote(commitMessage)) && git push -u origin \(shellQuote(session.branchName)) && gh pr create --fill --base main --head \(shellQuote(session.branchName))"
+        let terminalID = createTerminal(title: "metabolism PR", command: "/bin/zsh", args: ["-lc", command], workingDirectory: workspaceURL, environment: environment, startImmediately: false)
+        appendTerminalLine("提交并创建 PR：\(commitMessage)", kind: .system, to: terminalID)
+        let result = await runProcess(command: "/bin/zsh", args: ["-lc", command], workingDirectory: workspaceURL, environment: environment, timeout: 300, terminalID: terminalID) { _ in }
+        refreshWorkspaceFiles()
+        if result.status == .completed {
+            showAlert("已提交、推送并创建 PR。\n\n\(result.output.trimmingCharacters(in: .whitespacesAndNewlines))")
+        } else {
+            showAlert("提交或创建 PR 失败，请查看终端输出。")
+        }
+    }
+
+    func refreshWorkspaceFiles() {
+        guard let workspaceURL else {
+            workspaceFiles = []
+            collapsedWorkspaceFolders = []
+            selectedWorkspaceFile = nil
+            selectedWorkspaceFilePreview = ""
+            return
+        }
+        do {
+            workspaceFiles = try listWorkspaceFiles(root: workspaceURL)
+            let existingFolders = Set(workspaceFiles.filter(\.isDirectory).map(\.relativePath))
+            collapsedWorkspaceFolders = collapsedWorkspaceFolders.intersection(existingFolders)
+            if let selectedWorkspaceFile, !FileManager.default.fileExists(atPath: selectedWorkspaceFile.url.path) {
+                self.selectedWorkspaceFile = nil
+                selectedWorkspaceFilePreview = ""
+            }
+        } catch {
+            showAlert(error.localizedDescription)
+        }
+    }
+
+    func toggleWorkspaceFolder(_ item: WorkspaceFileItem) {
+        guard item.isDirectory else { return }
+        if collapsedWorkspaceFolders.contains(item.relativePath) {
+            collapsedWorkspaceFolders.remove(item.relativePath)
+        } else {
+            collapsedWorkspaceFolders.insert(item.relativePath)
+        }
+    }
+
+    func isWorkspaceFolderCollapsed(_ item: WorkspaceFileItem) -> Bool {
+        item.isDirectory && collapsedWorkspaceFolders.contains(item.relativePath)
+    }
+
+    func selectWorkspaceFile(_ item: WorkspaceFileItem) {
+        selectedWorkspaceFile = item
+        guard !item.isDirectory else {
+            selectedWorkspaceFilePreview = "文件夹：\(item.relativePath)"
+            return
+        }
+        do {
+            selectedWorkspaceFilePreview = try previewWorkspaceFile(item.url)
+        } catch {
+            selectedWorkspaceFilePreview = error.localizedDescription
+        }
+    }
+
+    func newInteractiveTerminal() {
+        createTerminal(title: "zsh", command: "/bin/zsh", args: ["-i"], startImmediately: true)
+    }
+
+    func newCommandTerminal(commandLine: String, title: String = "task") -> WorkspaceTerminalSession.ID {
+        createTerminal(title: title, command: "/bin/zsh", args: ["-lc", commandLine], startImmediately: true)
+    }
+
+    func stopSelectedTerminal() {
+        guard let id = selectedTerminalID else { return }
+        terminalProcesses[id]?.terminate()
+    }
+
+    func deleteTerminal(_ terminal: WorkspaceTerminalSession) {
+        terminalProcesses[terminal.id]?.terminate()
+        terminalProcesses[terminal.id] = nil
+        terminalInputHandles[terminal.id] = nil
+        terminals.removeAll { $0.id == terminal.id }
+        if selectedTerminalID == terminal.id {
+            selectedTerminalID = terminals.first?.id
+        }
+        if terminals.isEmpty {
+            createTerminal(title: "zsh", command: "/bin/zsh", args: ["-i"], startImmediately: false)
+        }
+    }
+
+    func persistSettings() {
+        save(settings, key: Self.settingsKey)
+    }
+
+    func fetchModels() async {
+        guard !isFetchingModels else { return }
+        isFetchingModels = true
+        do {
+            let models = try await OpenAICompatibleClient(settings: settings).fetchModels()
+            settings.availableModels = models
+            if !models.contains(settings.chatModel), let first = models.first {
+                settings.chatModel = first
+            }
+            persistSettings()
+        } catch {
+            showAlert(error.localizedDescription)
+        }
+        isFetchingModels = false
+    }
+
+    func addMCPServer() {
+        settings.mcpServers.insert(MCPServerConfig(name: "New MCP Server", description: "", type: .streamableHTTP, url: "", command: "", args: "", headers: "", isActive: false, isSelected: true, autoApprove: false), at: 0)
+        persistSettings()
+    }
+
+    func deleteMCPServer(_ server: MCPServerConfig) {
+        settings.mcpServers.removeAll { $0.id == server.id }
+        persistSettings()
+    }
+
+    func addSkill() {
+        settings.skills.insert(SkillConfig(name: "New Skill", description: "", content: "", isEnabled: true), at: 0)
+        persistSettings()
+    }
+
+    func deleteSkill(_ skill: SkillConfig) {
+        deleteImportedSkillFolderIfNeeded(skill)
+        settings.skills.removeAll { $0.id == skill.id }
+        persistSettings()
+    }
+
+    func importSkillFolder(from url: URL) {
+        do {
+            guard url.startAccessingSecurityScopedResource() else { throw ChatError.builtinToolFailed("无法访问所选 Skill 文件夹。") }
+            defer { url.stopAccessingSecurityScopedResource() }
+            let localURL = try copySkillFolderToApplicationSupport(from: url)
+            let skill = try loadSkillFolder(from: localURL, originalFolderName: url.lastPathComponent)
+            settings.skills.insert(skill, at: 0)
+            settings.enableSkills = true
+            persistSettings()
+        } catch {
+            showAlert(error.localizedDescription)
+        }
+    }
+
+    private func requestAssistantResponse(context: [ChatMessage], imagePrompt: String) async {
+        guard !isSending else { return }
+        isSending = true
+        resetStreamingDisplay()
+        defer {
+            resetStreamingDisplay()
+            isSending = false
+            activeResponseTask = nil
+        }
+        let shouldGenerateTitle = selectedConversation?.title == "新对话" && context.contains { $0.role == .user }
+
+        do {
+            let client = OpenAICompatibleClient(settings: settings)
+            var assistantMessage: ChatMessage
+            if composerMode == .image {
+                assistantMessage = try await client.generateImage(prompt: imagePrompt, size: imageSize)
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                append(assistantMessage)
+            } else if settings.enableStreaming {
+                assistantMessage = try await client.streamChat(messages: context) { [weak self] delta in
+                    Task { @MainActor in
+                        self?.appendStreamingDelta(delta)
+                    }
+                }
+                flushStreamingDisplay()
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                // If tool calls detected, truncate to only the JSON portion
+                let toolService = ToolInvocationService(settings: settings)
+                let invocations = toolService.extractInvocations(from: assistantMessage.text)
+                let hasTools = !invocations.isEmpty
+                if hasTools {
+                    // Keep only the tool JSON, discard any natural language the AI mixed in
+                    assistantMessage.text = invocations.map(\.rawJSON).joined()
+                    assistantMessage.isIntermediateResponse = true
+                }
+                let diffs = extractDiffs(from: assistantMessage.text)
+                if !diffs.isEmpty { assistantMessage.diffs = diffs }
+                append(assistantMessage)
+                if hasTools {
+                    try await executeToolsIncrementally(from: assistantMessage, context: context + [assistantMessage], client: client)
+                }
+            } else {
+                assistantMessage = try await client.sendChat(messages: context)
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+                // If tool calls detected, truncate to only the JSON portion
+                let toolService = ToolInvocationService(settings: settings)
+                let invocations = toolService.extractInvocations(from: assistantMessage.text)
+                let hasTools = !invocations.isEmpty
+                if hasTools {
+                    assistantMessage.text = invocations.map(\.rawJSON).joined()
+                    assistantMessage.isIntermediateResponse = true
+                }
+                let diffs = extractDiffs(from: assistantMessage.text)
+                if !diffs.isEmpty { assistantMessage.diffs = diffs }
+                append(assistantMessage)
+                if hasTools {
+                    try await executeToolsIncrementally(from: assistantMessage, context: context + [assistantMessage], client: client)
+                }
+            }
+            if shouldGenerateTitle, !shouldStopResponse, !Task.isCancelled {
+                await generateConversationTitle(using: client)
+            }
+        } catch is CancellationError {
+            appendTerminalLine("AI 响应已取消。", kind: .system, to: selectedTerminalID)
+        } catch {
+            if !shouldStopResponse {
+                showAlert(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Execute tools one by one as they are found, feeding results back immediately
+    private func executeToolsIncrementally(from message: ChatMessage, context: [ChatMessage], client: OpenAICompatibleClient) async throws {
+        guard settings.enableBuiltinTools else { return }
+        let toolService = ToolInvocationService(settings: settings)
+        let executor = BuiltinToolExecutor(settings: settings)
+        var currentMessage = message
+        var currentContext = context
+
+        for _ in 0..<max(settings.maxToolRounds, 0) {
+            try Task.checkCancellation()
+            guard !shouldStopResponse else { return }
+            let invocations = toolService.extractInvocations(from: currentMessage.text)
+            guard !invocations.isEmpty else { return }
+
+            // Execute each tool invocation immediately as we process them
+            var allResults: [BuiltinToolResult] = []
+            setToolInvocationRecords(for: currentMessage.id, records: invocations.map { invocation in
+                ToolInvocationRecord(id: invocation.id, toolName: invocation.name, displayName: toolDisplayName(invocation.name), input: invocation.rawJSON, output: "", status: .running, isConfirmed: nil, isComplete: false)
+            })
+
+            for invocation in invocations {
+                try Task.checkCancellation()
+                guard !shouldStopResponse else { return }
+
+                let result: BuiltinToolResult
+                if isTerminalTool(invocation.name) {
+                    let terminalResults = await executeTerminalInvocations([invocation], for: currentMessage.id, toolService: toolService)
+                    result = terminalResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else if invocation.name == "load_skill" {
+                    let skillResults = executeLoadSkillInvocations([invocation])
+                    result = skillResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else if invocation.name.hasPrefix("mcp_") {
+                    let mcpResults = await executeMCPInvocations([invocation], for: currentMessage.id, toolService: toolService)
+                    result = mcpResults.first ?? BuiltinToolResult(title: invocation.name, output: "执行失败", status: .failed)
+                } else {
+                    // Use the already-parsed request directly instead of re-parsing JSON
+                    result = await executor.executeSingleRequest(invocation.input)
+                }
+                allResults.append(result)
+
+                // Update UI immediately after each tool completes
+                mergeToolInvocationResult(for: currentMessage.id, invocationID: invocation.id, result: result)
+            }
+
+            guard !allResults.isEmpty else { return }
+
+            let resultText = allResults.map { result in
+                let statusText = result.status == .completed ? "成功" : "失败"
+                return "工具：\(result.title)\n状态：\(statusText)\n输出：\n\(result.output)"
+            }.joined(separator: "\n\n---\n\n")
+
+            var toolMessage = ChatMessage(role: .user, text: "以下是工具执行结果。如需继续调用工具，整条回复只输出 JSON，不要有任何其他文字。如果信息已足够，直接用自然语言给出最终答案。\n\n\(resultText)")
+            toolMessage.isToolResult = true
+            var finalMessage: ChatMessage
+            if settings.enableStreaming {
+                resetStreamingDisplay()
+                finalMessage = try await client.streamChat(messages: currentContext + [toolMessage]) { [weak self] delta in
+                    Task { @MainActor in self?.appendStreamingDelta(delta) }
+                }
+                flushStreamingDisplay()
+                resetStreamingDisplay()
+            } else {
+                finalMessage = try await client.sendChat(messages: currentContext + [toolMessage])
+            }
+            try Task.checkCancellation()
+            guard !shouldStopResponse else { return }
+            // If follow-up contains tool calls, truncate to only JSON
+            let followUpInvocations = toolService.extractInvocations(from: finalMessage.text)
+            if !followUpInvocations.isEmpty {
+                finalMessage.text = followUpInvocations.map(\.rawJSON).joined()
+                finalMessage.isIntermediateResponse = true
+            }
+            let followUpDiffs = extractDiffs(from: finalMessage.text)
+            if !followUpDiffs.isEmpty { finalMessage.diffs = followUpDiffs }
+            append(finalMessage)
+            currentContext += [toolMessage, finalMessage]
+            currentMessage = finalMessage
+        }
+    }
+
+    private func extractDiffs(from text: String) -> [FileDiffHunk] {
+        guard settings.enableBuiltinTools else { return [] }
+        let toolService = ToolInvocationService(settings: settings)
+        let invocations = toolService.extractInvocations(from: text)
+        var diffs: [FileDiffHunk] = []
+        for invocation in invocations {
+            guard invocation.name == "write_file" || invocation.name == "replace_string" || invocation.name == "create_file" else { continue }
+            guard let path = invocation.input.path else { continue }
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            let oldContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let newContent: String
+            if invocation.name == "replace_string", let oldStr = invocation.input.oldString, let newStr = invocation.input.newString {
+                newContent = oldContent.replacingOccurrences(of: oldStr, with: newStr)
+            } else if let content = invocation.input.content {
+                if invocation.input.append == true {
+                    newContent = oldContent + content
+                } else {
+                    newContent = content
+                }
+            } else {
+                continue
+            }
+            guard oldContent != newContent else { continue }
+            diffs.append(FileDiffHunk(filePath: path, oldContent: oldContent, newContent: newContent))
+        }
+        return diffs
+    }
+
+    private func isTerminalTool(_ name: String) -> Bool {
+        name == "terminal" || name == "terminal_read"
+    }
+
+    private func toolDisplayName(_ name: String) -> String {
+        ToolInvocationService(settings: settings).definition(named: name)?.displayName ?? name
+    }
+
+    private func terminalTitle(for request: BuiltinToolRequest) -> String {
+        switch request.tool {
+        case "terminal":
+            return "terminal: \(request.command ?? "")"
+        case "terminal_read":
+            return "terminal_read"
+        default:
+            return "terminal: \(request.command ?? "")"
+        }
+    }
+
+    private func executeTerminalInvocations(_ invocations: [ToolInvocation], for messageID: ChatMessage.ID, toolService: ToolInvocationService) async -> [BuiltinToolResult] {
+        var results: [BuiltinToolResult] = []
+        for invocation in invocations.prefix(3) {
+            let decision = toolService.permissionDecision(for: invocation)
+            if case .deny = decision.behavior {
+                results.append(BuiltinToolResult(title: terminalTitle(for: invocation.input), output: decision.reason ?? "工具被拒绝。", status: .failed))
+                continue
+            }
+            let result = await executeSkillTerminal(invocation.input, for: messageID)
+            results.append(result)
+        }
+        return results
+    }
+
+    private func executeLoadSkillInvocations(_ invocations: [ToolInvocation]) -> [BuiltinToolResult] {
+        invocations.prefix(5).map { invocation in
+            let output = loadSkillContext(skillName: invocation.input.skill, requestedFiles: invocation.input.files)
+            return BuiltinToolResult(title: "load_skill: \(invocation.input.skill ?? "")", output: output, status: output.hasPrefix("未找到") ? .failed : .completed)
+        }
+    }
+
+    private func loadSkillContext(skillName: String?, requestedFiles: [String]?) -> String {
+        guard let skill = resolvedSkill(for: skillName) else { return "未找到 Skill：\(skillName ?? "")" }
+        var sections = [
+            "Skill：\(skill.name)",
+            "描述：\(skill.description)",
+            "SKILL.md：\n\(skill.content)"
+        ]
+        let selectedFiles: [SkillFile]
+        if let requestedFiles, !requestedFiles.isEmpty {
+            let wanted = Set(requestedFiles.map { $0.lowercased() })
+            selectedFiles = skill.files.filter { wanted.contains($0.relativePath.lowercased()) }
+        } else {
+            selectedFiles = Array(skill.files.prefix(8))
+        }
+        if !selectedFiles.isEmpty {
+            sections.append("附带文件：\n" + selectedFiles.map { file in
+                "文件：\(file.relativePath)\n大小：\(file.byteCount) bytes\n\(String(file.content.prefix(12_000)))"
+            }.joined(separator: "\n\n---\n\n"))
+        }
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func executeMCPInvocations(_ invocations: [ToolInvocation], for messageID: ChatMessage.ID, toolService: ToolInvocationService) async -> [BuiltinToolResult] {
+        var results: [BuiltinToolResult] = []
+        for invocation in invocations.prefix(3) {
+            let decision = toolService.permissionDecision(for: invocation)
+            if case .ask = decision.behavior, !settings.yoloMode {
+                let approved = await requestTerminalApproval(command: invocation.name, args: [invocation.rawJSON], workingDirectory: workspaceURL?.path ?? FileManager.default.currentDirectoryPath)
+                guard approved else {
+                    results.append(BuiltinToolResult(title: invocation.name, output: "用户取消 MCP 工具调用。", status: .failed))
+                    continue
+                }
+            }
+            results.append(BuiltinToolResult(title: invocation.name, output: "MCP 工具注册与确认流程已就绪。当前版本尚未实现完整 JSON-RPC 会话调用；请在设置中配置 server 后继续接入 tools/list 与 tools/call。\n输入：\n\(invocation.rawJSON)", status: .failed))
+        }
+        return results
+    }
+
+    private func executeSkillTerminal(_ request: BuiltinToolRequest, for messageID: ChatMessage.ID) async -> BuiltinToolResult {
+        let title = terminalTitle(for: request)
+        if request.tool == "terminal_read" {
+            let output = selectedTerminalTranscript()
+            return BuiltinToolResult(title: title, output: output.isEmpty ? "当前终端暂无内容。" : output, status: .completed)
+        }
+        guard let command = request.command, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return BuiltinToolResult(title: title, output: "terminal 缺少 command。", status: .failed)
+        }
+        let args = request.args ?? []
+        let workingDirectory = workspaceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let environment = terminalEnvironment()
+        let resolvedCommand = terminalService.resolve(command: command, args: args, environment: environment)
+        let displayCommand = resolvedCommand.displayCommand
+        let cwdPath = workingDirectory.path
+        updateToolRun(for: messageID, title: title, output: "等待用户批准执行：\ncd \(cwdPath)\n\(displayCommand)", status: .running)
+        await ensureAccessForTerminalCommand(displayCommand)
+        await ensureExecutableAccessIfNeeded(resolvedCommand.executable)
+        let approved = await requestTerminalApproval(command: resolvedCommand.executable, args: resolvedCommand.args, workingDirectory: cwdPath)
+        guard approved else {
+            return BuiltinToolResult(title: title, output: "用户取消执行。", status: .failed)
+        }
+
+        let terminalID = createTerminal(title: "ai command", command: resolvedCommand.executable, args: resolvedCommand.args, workingDirectory: workingDirectory, environment: environment, startImmediately: false)
+        appendTerminalLine("pwd: \(cwdPath)", kind: .system, to: terminalID)
+        appendTerminalLine("AI 调用：\(displayCommand)", kind: .input, to: terminalID)
+        let result = await runProcess(command: resolvedCommand.executable, args: resolvedCommand.args, workingDirectory: workingDirectory, environment: environment, timeout: min(max(request.timeout ?? 120, 5), 600), terminalID: terminalID) { text in
+            self.updateToolRun(for: messageID, title: title, output: text, status: .running)
+        }
+        updateToolRun(for: messageID, title: title, output: result.output, status: result.status)
+        return BuiltinToolResult(title: title, output: result.output, status: result.status)
+    }
+
+    private func runProcess(command: String, args: [String], workingDirectory: URL?, environment: [String: String], timeout: Int, terminalID: WorkspaceTerminalSession.ID?, onOutput: @escaping @MainActor (String) -> Void) async -> TerminalExecutionResult {
+        markTerminal(terminalID, running: true)
+        var output = ""
+        let result = await terminalService.run(command: command, args: args, workingDirectory: workingDirectory, environment: environment, timeout: timeout) { text in
+            Task { @MainActor in
+                output += text
+                let currentOutput = String(output.suffix(40_000))
+                self.appendTerminalChunk(text, to: terminalID)
+                onOutput(currentOutput)
+            }
+        }
+        markTerminal(terminalID, running: false)
+        onOutput(result.output)
+        return result
+    }
+
+    private func appendStreamingDelta(_ delta: String) {
+        pendingStreamingDelta += delta
+        guard streamingFlushTask == nil else { return }
+        streamingFlushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            await MainActor.run {
+                guard let self else { return }
+                self.flushStreamingDisplay()
+            }
+        }
+    }
+
+    private func flushStreamingDisplay() {
+        guard !pendingStreamingDelta.isEmpty else {
+            streamingFlushTask = nil
+            return
+        }
+        streamingText += pendingStreamingDelta
+        pendingStreamingDelta = ""
+        streamingFlushTask = nil
+    }
+
+    private func resetStreamingDisplay() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        pendingStreamingDelta = ""
+        streamingText = ""
+    }
+
+    private func commitStreamingDisplayAsStoppedMessage() {
+        streamingFlushTask?.cancel()
+        streamingFlushTask = nil
+        flushStreamingDisplay()
+        let partialText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingStreamingDelta = ""
+        streamingText = ""
+        guard !partialText.isEmpty else { return }
+        var message = ChatMessage(role: .assistant, text: partialText)
+        let diffs = extractDiffs(from: partialText)
+        if !diffs.isEmpty { message.diffs = diffs }
+        append(message)
+    }
+
+    @discardableResult
+    private func createTerminal(title: String, command: String, args: [String], workingDirectory: URL? = nil, environment: [String: String]? = nil, startImmediately: Bool) -> WorkspaceTerminalSession.ID {
+        let cwd = workingDirectory ?? workspaceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        var session = WorkspaceTerminalSession(title: title, workingDirectory: cwd.path, command: ([command] + args).joined(separator: " "), lines: [TerminalLine(text: "pwd: \(cwd.path)", kind: .system)], isRunning: false)
+        session.screen = TerminalScreen(lines: ["pwd: \(cwd.path)", ""], cursorRow: 1, cursorColumn: 0)
+        terminals.append(session)
+        selectedTerminalID = session.id
+        if startImmediately {
+            startInteractiveProcess(for: session.id, command: command, args: args, workingDirectory: cwd, environment: environment ?? terminalEnvironment())
+        }
+        return session.id
+    }
+
+    private func startInteractiveProcess(for id: WorkspaceTerminalSession.ID, command: String, args: [String], workingDirectory: URL, environment: [String: String]) {
+        guard terminalProcesses[id] == nil else { return }
+        do {
+            let runningProcess = try terminalService.startInteractive(command: command, args: args, workingDirectory: workingDirectory, environment: environment) { text in
+            Task { @MainActor in self.appendTerminalChunk(text, to: id) }
+            } onExit: { exitCode in
+            Task { @MainActor in
+                self.markTerminal(id, running: false)
+                    self.appendTerminalLine("[exit \(exitCode)]", kind: exitCode == 0 ? .system : .error, to: id)
+                self.terminalProcesses[id] = nil
+                self.terminalInputHandles[id] = nil
+                self.refreshWorkspaceFiles()
+            }
+            }
+            terminalProcesses[id] = runningProcess.process
+            terminalInputHandles[id] = runningProcess.inputHandle
+            markTerminal(id, running: true)
+        } catch {
+            appendTerminalLine(error.localizedDescription, kind: .error, to: id)
+            markTerminal(id, running: false)
+        }
+    }
+
+    func sendToSelectedTerminal(_ text: String) {
+        guard let id = selectedTerminalID, let data = text.data(using: .utf8) else { return }
+        ensureSelectedInteractiveTerminalIsRunning()
+        terminalInputHandles[id]?.write(data)
+    }
+
+    private func ensureSelectedInteractiveTerminalIsRunning() {
+        guard let id = selectedTerminalID else { return }
+        if terminalProcesses[id] == nil, let terminal = terminals.first(where: { $0.id == id }) {
+            startInteractiveProcess(for: id, command: "/bin/zsh", args: ["-i"], workingDirectory: URL(fileURLWithPath: terminal.workingDirectory), environment: terminalEnvironment())
+        }
+    }
+
+    func approvePendingTerminalExecution() {
+        pendingTerminalApproval?.approve()
+        pendingTerminalApproval = nil
+    }
+
+    func denyPendingTerminalExecution() {
+        pendingTerminalApproval?.deny()
+        pendingTerminalApproval = nil
+    }
+
+    private func requestTerminalApproval(command: String, args: [String], workingDirectory: String) async -> Bool {
+        if settings.yoloMode { return true }
+        return await withCheckedContinuation { continuation in
+            pendingTerminalApproval = TerminalApprovalRequest(command: command, args: args, workingDirectory: workingDirectory) { approved in
+                continuation.resume(returning: approved)
+            }
+        }
+    }
+
+    private func updateToolRun(for messageID: ChatMessage.ID, title: String, output: String, status: ToolRunStatus) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        if let runIndex = conversations[conversationIndex].messages[messageIndex].toolRuns.firstIndex(where: { $0.title == title }) {
+            conversations[conversationIndex].messages[messageIndex].toolRuns[runIndex].output = output
+            conversations[conversationIndex].messages[messageIndex].toolRuns[runIndex].status = status
+        }
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func terminalEnvironment() -> [String: String] {
+        terminalService.environment(pathAdditions: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+    }
+
+    private func metabolismCloneDestination(branchName: String) throws -> URL {
+        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("EasyChat", isDirectory: true)
+            .appendingPathComponent("Metabolism", isDirectory: true)
+        return root.appendingPathComponent("metabolic_easy_chat-\(branchName)", isDirectory: true).standardizedFileURL
+    }
+
+    private func openGitHubLoginTerminal(workingDirectory: URL, missingGH: Bool) {
+        let terminalID = createTerminal(title: missingGH ? "install gh" : "gh login", command: "/bin/zsh", args: ["-i"], workingDirectory: workingDirectory, environment: terminalEnvironment(), startImmediately: true)
+        let instructions: String
+        if missingGH {
+            instructions = """
+            未检测到 gh 命令。
+            1. 请先运行：brew install gh
+            2. 创建 GitHub Personal Access Token，至少需要 repo 权限。
+            3. 登录方式：echo YOUR_TOKEN | gh auth login --with-token
+            4. 登录完成后，再点击“提交并提PR”。
+            """
+        } else {
+            instructions = """
+            gh 已安装，但尚未登录 GitHub。
+            1. 创建 GitHub Personal Access Token，至少需要 repo 权限。
+            2. 登录方式：echo YOUR_TOKEN | gh auth login --with-token
+            3. 可用 gh auth status 检查登录状态。
+            4. 登录完成后，再点击“提交并提PR”。
+            """
+        }
+        appendTerminalLine(instructions, kind: .system, to: terminalID)
+    }
+
+    private func generateMetabolismCommitMessage(status: String) async -> String {
+        let fallback = "Update EasyChat metabolism workspace"
+        let prompt = ChatMessage(role: .user, text: """
+        请根据下面的 git status --short 输出生成一个英文 git commit message。
+        要求：
+        - 只输出 commit message，不要解释，不要引号。
+        - 祈使句，72 字符以内。
+        - 不要包含换行。
+
+        git status:
+        \(status)
+        """)
+        do {
+            let response = try await OpenAICompatibleClient(settings: settings).sendChat(messages: [prompt])
+            let message = response.text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: "\n")
+                .first
+                .map(String.init) ?? fallback
+            let cleaned = message.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\r\"'“”‘’`"))
+            return cleaned.isEmpty ? fallback : String(cleaned.prefix(72))
+        } catch {
+            return fallback
+        }
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func selectedTerminalTranscript() -> String {
+        guard let selectedTerminal else { return "" }
+        return String(selectedTerminal.transcript.suffix(40_000))
+    }
+
+    private func ensureExecutableAccessIfNeeded(_ executable: String) async {
+        guard isRunningInAppSandbox else { return }
+        guard executable.hasPrefix("/"), !isSystemExecutablePath(executable), !isPathAuthorized(executable) else { return }
+        appendTerminalLine("命令需要执行外部程序，请在弹出的授权面板中选择该程序或其上级文件夹：\n\(executable)", kind: .system, to: selectedTerminalID)
+        requestAccessForPaths([executable])
+    }
+
+    private func isSystemExecutablePath(_ path: String) -> Bool {
+        path.hasPrefix("/usr/bin/") || path.hasPrefix("/bin/") || path.hasPrefix("/usr/sbin/") || path.hasPrefix("/sbin/")
+    }
+
+    private func markMessageAsIntermediate(_ messageID: ChatMessage.ID) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        conversations[conversationIndex].messages[messageIndex].isIntermediateResponse = true
+    }
+
+    private func setToolRuns(for messageID: ChatMessage.ID, runs: [ToolRun]) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        conversations[conversationIndex].messages[messageIndex].toolRuns = runs
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func setToolInvocationRecords(for messageID: ChatMessage.ID, records: [ToolInvocationRecord]) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        conversations[conversationIndex].messages[messageIndex].toolInvocations = records
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func mergeToolInvocationResult(for messageID: ChatMessage.ID, invocationID: String, result: BuiltinToolResult) {
+        guard let conversationIndex = selectedConversationIndex(), let messageIndex = conversations[conversationIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        if let recordIndex = conversations[conversationIndex].messages[messageIndex].toolInvocations.firstIndex(where: { $0.id == invocationID }) {
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].output = result.output
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].status = result.status
+            conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isComplete = true
+            if conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed == nil {
+                conversations[conversationIndex].messages[messageIndex].toolInvocations[recordIndex].isConfirmed = result.status == .completed
+            }
+        }
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func generateConversationTitle(using client: OpenAICompatibleClient) async {
+        guard let index = selectedConversationIndex(), conversations[index].title == "新对话" else { return }
+        let messages = conversations[index].messages.prefix(6).map { message in
+            "\(message.role.title)：\(message.text)"
+        }.joined(separator: "\n")
+        guard !messages.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        do {
+            let prompt = ChatMessage(role: .user, text: """
+            请为下面这段对话生成一个简洁中文标题。
+            要求：
+            - 只输出标题，不要解释，不要加引号。
+            - 8 到 18 个汉字左右。
+            - 不要使用“新对话”。
+
+            对话：
+            \(messages)
+            """)
+            let response = try await client.sendChat(messages: [prompt])
+            let title = cleanGeneratedTitle(response.text)
+            guard !title.isEmpty, let currentIndex = selectedConversationIndex(), conversations[currentIndex].title == "新对话" else { return }
+            conversations[currentIndex].title = title
+            conversations[currentIndex].updatedAt = Date()
+            persistConversations()
+        } catch {
+            guard let currentIndex = selectedConversationIndex(), conversations[currentIndex].title == "新对话", let firstUser = conversations[currentIndex].messages.first(where: { $0.role == .user }) else { return }
+            conversations[currentIndex].title = title(from: firstUser.text)
+            persistConversations()
+        }
+    }
+
+    private func append(_ message: ChatMessage) {
+        guard let index = selectedConversationIndex() else { return }
+        conversations[index].messages.append(message)
+        conversations[index].updatedAt = Date()
+
+        persistConversations()
+    }
+
+    private func selectedConversationIndex() -> Int? {
+        if let selectedConversationID, let index = conversations.firstIndex(where: { $0.id == selectedConversationID }) {
+            return index
+        }
+        if conversations.isEmpty {
+            startNewConversation()
+        }
+        selectedConversationID = conversations.first?.id
+        return conversations.indices.first
+    }
+
+    private func title(from text: String) -> String {
+        let clean = text.replacingOccurrences(of: "\n", with: " ")
+        if clean.count <= 18 { return clean }
+        return String(clean.prefix(18)) + "…"
+    }
+
+    private func cleanGeneratedTitle(_ text: String) -> String {
+        var title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.hasPrefix("```") {
+            let lines = title.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            title = lines.dropFirst().dropLast(lines.last?.hasPrefix("```") == true ? 1 : 0).joined(separator: "\n")
+        }
+        title = title.split(separator: "\n").first.map(String.init) ?? title
+        title = title.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\r\"'“”‘’#：:"))
+        if title.count > 24 { title = String(title.prefix(24)) + "…" }
+        return title == "新对话" ? "" : title
+    }
+
+    private func showAlert(_ message: String) {
+        alertMessage = message
+        isShowingAlert = true
+    }
+
+    private func mimeType(for url: URL) -> String {
+        if let type = UTType(filenameExtension: url.pathExtension), let mimeType = type.preferredMIMEType {
+            return mimeType
+        }
+        return "application/octet-stream"
+    }
+
+    private func textPreview(from data: Data) -> String? {
+        let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        return text.map { String($0.prefix(20_000)) }
+    }
+
+    private func listWorkspaceFiles(root: URL) throws -> [WorkspaceFileItem] {
+        var items: [WorkspaceFileItem] = []
+        try collectWorkspaceFiles(root: root, directory: root, depth: 0, output: &items)
+        return items
+    }
+
+    private func collectWorkspaceFiles(root: URL, directory: URL, depth: Int, output: inout [WorkspaceFileItem]) throws {
+        guard depth <= 5 else { return }
+        let children = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            .filter { ![".git", "node_modules", "DerivedData", ".build"].contains($0.lastPathComponent) }
+            .sorted { left, right in
+                let leftIsDirectory = ((try? left.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false)
+                let rightIsDirectory = ((try? right.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false)
+                if leftIsDirectory != rightIsDirectory { return leftIsDirectory && !rightIsDirectory }
+                return left.lastPathComponent.localizedStandardCompare(right.lastPathComponent) == .orderedAscending
+            }
+        for child in children.prefix(120) {
+            let isDirectory = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            let relativePath = child.path.replacingOccurrences(of: root.path + "/", with: "")
+            output.append(WorkspaceFileItem(url: child, relativePath: relativePath, isDirectory: isDirectory, depth: depth))
+            if isDirectory { try collectWorkspaceFiles(root: root, directory: child, depth: depth + 1, output: &output) }
+            if output.count >= 1_000 { return }
+        }
+    }
+
+    private func previewWorkspaceFile(_ url: URL) throws -> String {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= 2_000_000 else { throw ChatError.builtinToolFailed("文件过大，仅支持预览 2MB 以内文本文件。") }
+        guard let text = textPreview(from: data) else { throw ChatError.builtinToolFailed("无法按文本预览文件。") }
+        return text
+    }
+
+    private func appendTerminalLine(_ text: String, kind: TerminalLineKind, to terminalID: WorkspaceTerminalSession.ID?) {
+        guard let index = terminalIndex(for: terminalID) else { return }
+        terminals[index].lines.append(TerminalLine(text: text, kind: kind))
+        if kind == .output || kind == .input {
+            applyTerminalOutput(text, to: index)
+        } else {
+            applyTerminalOutput("\r\n\(text)\r\n", to: index)
+        }
+        if terminals[index].lines.count > 500 {
+            terminals[index].lines.removeFirst(terminals[index].lines.count - 500)
+        }
+    }
+
+    private func appendTerminalChunk(_ text: String, to terminalID: WorkspaceTerminalSession.ID?) {
+        guard let index = terminalIndex(for: terminalID) else { return }
+        applyTerminalOutput(text, to: index)
+        if terminals[index].lines.last?.kind == .output {
+            terminals[index].lines[terminals[index].lines.count - 1].text += text
+            if terminals[index].lines[terminals[index].lines.count - 1].text.count > 60_000 {
+                terminals[index].lines[terminals[index].lines.count - 1].text = String(terminals[index].lines[terminals[index].lines.count - 1].text.suffix(60_000))
+            }
+        } else {
+            appendTerminalLine(text, kind: .output, to: terminalID)
+        }
+    }
+
+    private func applyTerminalOutput(_ text: String, to index: Int) {
+        var screen = terminals[index].screen
+        var iterator = text.unicodeScalars.makeIterator()
+        while let scalar = iterator.next() {
+            switch scalar.value {
+            case 8, 127:
+                if screen.cursorColumn > 0 {
+                    screen.cursorColumn -= 1
+                    replaceCharacter(in: &screen, at: screen.cursorColumn, with: " ")
+                }
+            case 10:
+                screen.cursorRow += 1
+                screen.cursorColumn = 0
+                ensureScreenRow(&screen)
+            case 13:
+                screen.cursorColumn = 0
+            case 9:
+                let spaces = 4 - (screen.cursorColumn % 4)
+                for _ in 0..<spaces { insertPrintable(" ", into: &screen) }
+            case 27:
+                handleEscapeSequence(iterator: &iterator, screen: &screen)
+            default:
+                if scalar.value >= 32 {
+                    insertPrintable(String(scalar), into: &screen)
+                }
+            }
+        }
+        if screen.lines.count > 500 {
+            let removed = screen.lines.count - 500
+            screen.lines.removeFirst(removed)
+            if screen.styledLines.count >= removed {
+                screen.styledLines.removeFirst(removed)
+            }
+            screen.cursorRow = max(0, screen.cursorRow - removed)
+        }
+        terminals[index].screen = screen
+    }
+
+    private func handleEscapeSequence(iterator: inout String.UnicodeScalarView.Iterator, screen: inout TerminalScreen) {
+        guard let next = iterator.next(), next == "[" else { return }
+        var parameters = ""
+        while let scalar = iterator.next() {
+            if scalar.value >= 0x40, scalar.value <= 0x7E {
+                applyCSI(final: Character(scalar), parameters: parameters, screen: &screen)
+                return
+            }
+            parameters.unicodeScalars.append(scalar)
+        }
+    }
+
+    private func applyCSI(final: Character, parameters: String, screen: inout TerminalScreen) {
+        let values = parameters.split(separator: ";").compactMap { Int($0.trimmingCharacters(in: CharacterSet(charactersIn: "?"))) }
+        let amount = max(values.first ?? 1, 1)
+        switch final {
+        case "A":
+            screen.cursorRow = max(0, screen.cursorRow - amount)
+        case "B":
+            screen.cursorRow += amount
+            ensureScreenRow(&screen)
+        case "C":
+            screen.cursorColumn += amount
+        case "D":
+            screen.cursorColumn = max(0, screen.cursorColumn - amount)
+        case "G":
+            screen.cursorColumn = max(0, amount - 1)
+        case "H", "f":
+            screen.cursorRow = max(0, (values.first ?? 1) - 1)
+            screen.cursorColumn = max(0, (values.dropFirst().first ?? 1) - 1)
+            ensureScreenRow(&screen)
+        case "J":
+            if values.first ?? 0 == 2 {
+                screen.lines = [""]
+                screen.styledLines = [[]]
+                screen.cursorRow = 0
+                screen.cursorColumn = 0
+            }
+        case "K":
+            ensureScreenRow(&screen)
+            let line = screen.lines[screen.cursorRow]
+            if screen.cursorColumn < line.count {
+                screen.lines[screen.cursorRow] = String(line.prefix(screen.cursorColumn))
+                screen.styledLines[screen.cursorRow] = Array(screen.styledLines[screen.cursorRow].prefix(screen.cursorColumn))
+            }
+        case "m":
+            applySGR(parameters: parameters, screen: &screen)
+        default:
+            break
+        }
+    }
+
+    private func applySGR(parameters: String, screen: inout TerminalScreen) {
+        let codes = parameters.isEmpty ? [0] : parameters.split(separator: ";", omittingEmptySubsequences: false).map { Int($0) ?? 0 }
+        var index = 0
+        while index < codes.count {
+            let code = codes[index]
+            switch code {
+            case 0:
+                screen.currentStyle = .normal
+            case 1:
+                screen.currentStyle.isBold = true
+            case 2:
+                screen.currentStyle.isDim = true
+            case 4:
+                screen.currentStyle.isUnderlined = true
+            case 7:
+                screen.currentStyle.isInverse = true
+            case 22:
+                screen.currentStyle.isBold = false
+                screen.currentStyle.isDim = false
+            case 24:
+                screen.currentStyle.isUnderlined = false
+            case 27:
+                screen.currentStyle.isInverse = false
+            case 30...37:
+                screen.currentStyle.foregroundIndex = code - 30
+            case 39:
+                screen.currentStyle.foregroundIndex = nil
+            case 40...47:
+                screen.currentStyle.backgroundIndex = code - 40
+            case 49:
+                screen.currentStyle.backgroundIndex = nil
+            case 90...97:
+                screen.currentStyle.foregroundIndex = code - 90 + 8
+            case 100...107:
+                screen.currentStyle.backgroundIndex = code - 100 + 8
+            case 38, 48:
+                if index + 2 < codes.count, codes[index + 1] == 5 {
+                    let colorIndex = codes[index + 2]
+                    if code == 38 {
+                        screen.currentStyle.foregroundIndex = colorIndex
+                    } else {
+                        screen.currentStyle.backgroundIndex = colorIndex
+                    }
+                    index += 2
+                } else if index + 4 < codes.count, codes[index + 1] == 2 {
+                    let colorIndex = 16 + min(215, max(0, codes[index + 2] / 51) * 36 + max(0, codes[index + 3] / 51) * 6 + max(0, codes[index + 4] / 51))
+                    if code == 38 {
+                        screen.currentStyle.foregroundIndex = colorIndex
+                    } else {
+                        screen.currentStyle.backgroundIndex = colorIndex
+                    }
+                    index += 4
+                }
+            default:
+                break
+            }
+            index += 1
+        }
+    }
+
+    private func insertPrintable(_ text: String, into screen: inout TerminalScreen) {
+        ensureScreenRow(&screen)
+        padLine(&screen.lines[screen.cursorRow], to: screen.cursorColumn)
+        padStyledLine(&screen.styledLines[screen.cursorRow], to: screen.cursorColumn, style: screen.currentStyle)
+        var line = screen.lines[screen.cursorRow]
+        let index = line.index(line.startIndex, offsetBy: screen.cursorColumn)
+        if index < line.endIndex {
+            line.replaceSubrange(index...index, with: text)
+            screen.styledLines[screen.cursorRow][screen.cursorColumn] = TerminalCell(text: text, style: screen.currentStyle)
+        } else {
+            line.append(text)
+            screen.styledLines[screen.cursorRow].append(TerminalCell(text: text, style: screen.currentStyle))
+        }
+        screen.lines[screen.cursorRow] = line
+        screen.cursorColumn += text.count
+    }
+
+    private func replaceCharacter(in screen: inout TerminalScreen, at column: Int, with text: String) {
+        ensureScreenRow(&screen)
+        padLine(&screen.lines[screen.cursorRow], to: column)
+        padStyledLine(&screen.styledLines[screen.cursorRow], to: column, style: screen.currentStyle)
+        var line = screen.lines[screen.cursorRow]
+        let index = line.index(line.startIndex, offsetBy: column)
+        if index < line.endIndex {
+            line.replaceSubrange(index...index, with: text)
+            screen.styledLines[screen.cursorRow][column] = TerminalCell(text: text, style: screen.currentStyle)
+        }
+        screen.lines[screen.cursorRow] = line
+    }
+
+    private func ensureScreenRow(_ screen: inout TerminalScreen) {
+        while screen.cursorRow >= screen.lines.count {
+            screen.lines.append("")
+            screen.styledLines.append([])
+        }
+        while screen.cursorRow >= screen.styledLines.count {
+            screen.styledLines.append([])
+        }
+    }
+
+    private func padLine(_ line: inout String, to column: Int) {
+        if line.count < column {
+            line += String(repeating: " ", count: column - line.count)
+        }
+    }
+
+    private func padStyledLine(_ line: inout [TerminalCell], to column: Int, style: TerminalTextStyle) {
+        while line.count < column {
+            line.append(TerminalCell(text: " ", style: style))
+        }
+    }
+
+    private func markTerminal(_ terminalID: WorkspaceTerminalSession.ID?, running: Bool) {
+        guard let index = terminalIndex(for: terminalID) else { return }
+        terminals[index].isRunning = running
+    }
+
+    private func terminalIndex(for terminalID: WorkspaceTerminalSession.ID?) -> Int? {
+        if let terminalID, let index = terminals.firstIndex(where: { $0.id == terminalID }) { return index }
+        return terminals.indices.first
+    }
+
+    private func importedSkillsRootURL() throws -> URL {
+        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("EasyChat", isDirectory: true)
+            .appendingPathComponent("Skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    private func copySkillFolderToApplicationSupport(from sourceURL: URL) throws -> URL {
+        let root = try importedSkillsRootURL()
+        let safeName = sourceURL.lastPathComponent.replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
+        let destination = root.appendingPathComponent("\(safeName)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        return destination.standardizedFileURL
+    }
+
+    private func deleteImportedSkillFolderIfNeeded(_ skill: SkillConfig) {
+        guard !skill.localFolderPath.isEmpty else { return }
+        let url = URL(fileURLWithPath: skill.localFolderPath).standardizedFileURL
+        guard (try? importedSkillsRootURL()).map({ url.path.hasPrefix($0.path + "/") }) == true else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func loadSkillFolder(from folderURL: URL, originalFolderName: String? = nil) throws -> SkillConfig {
+        let skillURL = folderURL.appendingPathComponent("SKILL.md")
+        guard FileManager.default.fileExists(atPath: skillURL.path) else {
+            throw ChatError.builtinToolFailed("Skill 文件夹内必须包含 SKILL.md。")
+        }
+
+        let skillData = try Data(contentsOf: skillURL)
+        guard let skillContent = textPreview(from: skillData), !skillContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatError.builtinToolFailed("SKILL.md 为空或不是文本。")
+        }
+
+        let files = try loadSkillFiles(in: folderURL, excluding: skillURL)
+        let name = skillName(from: folderURL, content: skillContent)
+        return SkillConfig(name: name, description: skillDescription(from: skillContent), content: skillContent, folderName: originalFolderName ?? folderURL.lastPathComponent, localFolderPath: folderURL.path, files: files, isEnabled: true)
+    }
+
+    private func loadSkillFiles(in folderURL: URL, excluding skillURL: URL) throws -> [SkillFile] {
+        guard let enumerator = FileManager.default.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { return [] }
+        var files: [SkillFile] = []
+        for case let fileURL as URL in enumerator {
+            if fileURL.standardizedFileURL == skillURL.standardizedFileURL { continue }
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+            let data = try Data(contentsOf: fileURL)
+            guard data.count <= 500_000, let text = textPreview(from: data) else { continue }
+            let relativePath = fileURL.path.replacingOccurrences(of: folderURL.path + "/", with: "")
+            files.append(SkillFile(relativePath: relativePath, content: text, byteCount: data.count))
+        }
+        return files
+    }
+
+    private func skillName(from folderURL: URL, content: String) -> String {
+        if let heading = content.split(separator: "\n").map(String.init).first(where: { $0.hasPrefix("# ") }) {
+            return String(heading.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return folderURL.lastPathComponent
+    }
+
+    private func skillDescription(from content: String) -> String {
+        content.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && !$0.hasPrefix("#") } ?? "Skill 文件夹"
+    }
+
+    private func resolvedSkill(for skillName: String?) -> SkillConfig? {
+        let enabledSkills = settings.skills.filter(\.isEnabled)
+        guard let skillName, !skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return enabledSkills.count == 1 ? enabledSkills.first : nil
+        }
+        let normalized = skillName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return settings.skills.first { skill in
+            skill.name.lowercased() == normalized
+                || skill.folderName.lowercased() == normalized
+                || skill.name.lowercased().contains(normalized)
+                || normalized.contains(skill.name.lowercased())
+        }
+    }
+
+    private func migrateImportedSkillsIfNeeded() {
+        var changed = false
+        for index in settings.skills.indices {
+            guard settings.skills[index].isEnabled, !settings.skills[index].folderName.isEmpty else { continue }
+            if !settings.skills[index].localFolderPath.isEmpty, FileManager.default.fileExists(atPath: settings.skills[index].localFolderPath) { continue }
+            if let localURL = findImportedSkillFolder(for: settings.skills[index]) {
+                settings.skills[index].localFolderPath = localURL.path
+                changed = true
+            }
+        }
+        if changed { persistSettings() }
+    }
+
+    private func findImportedSkillFolder(for skill: SkillConfig) -> URL? {
+        guard let root = try? importedSkillsRootURL(), let children = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return nil }
+        let candidates = children.filter { url in
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard isDirectory else { return false }
+            let skillURL = url.appendingPathComponent("SKILL.md")
+            guard FileManager.default.fileExists(atPath: skillURL.path) else { return false }
+            let nameMatch = !skill.folderName.isEmpty && url.lastPathComponent.lowercased().hasPrefix(skill.folderName.lowercased())
+            let contentMatch: Bool = {
+                guard let data = try? Data(contentsOf: skillURL), let text = textPreview(from: data) else { return false }
+                return text == skill.content || text.contains(skill.name) || text.contains(skill.description)
+            }()
+            return nameMatch || contentMatch
+        }
+        return candidates.sorted { $0.lastPathComponent > $1.lastPathComponent }.first?.standardizedFileURL
+    }
+
+    private func restorePersistedSecurityScopes() {
+        activeSecurityScopedURLs.removeAll()
+        if let bookmarkData = settings.workspaceBookmark, let url = resolveBookmark(bookmarkData) {
+            _ = url.startAccessingSecurityScopedResource()
+            activeSecurityScopedURLs.append(url)
+            settings.workspacePath = url.path
+        }
+        for bookmark in settings.authorizedBookmarks {
+            if let url = resolveBookmark(bookmark.bookmarkData) {
+                _ = url.startAccessingSecurityScopedResource()
+                activeSecurityScopedURLs.append(url)
+            }
+        }
+    }
+
+    private func authorize(url: URL, saveAsWorkspace: Bool) {
+        let standardizedURL = url.standardizedFileURL
+        _ = standardizedURL.startAccessingSecurityScopedResource()
+        activeSecurityScopedURLs.append(standardizedURL)
+        do {
+            let bookmarkData = try standardizedURL.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            if saveAsWorkspace {
+                settings.workspacePath = standardizedURL.path
+                settings.workspaceBookmark = bookmarkData
+            } else if !settings.authorizedBookmarks.contains(where: { $0.path == standardizedURL.path }) {
+                settings.authorizedBookmarks.append(SecurityScopedBookmark(path: standardizedURL.path, bookmarkData: bookmarkData))
+            }
+        } catch {
+            showAlert("授权保存失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func resolveBookmark(_ data: Data) -> URL? {
+        var isStale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &isStale) else { return nil }
+        return url.standardizedFileURL
+    }
+
+    private func ensureAccessForTerminalCommand(_ commandLine: String) async {
+        guard isRunningInAppSandbox else { return }
+        let paths = terminalPathsNeedingAuthorization(in: commandLine)
+        guard !paths.isEmpty else { return }
+        let missingPaths = paths.filter { !isPathAuthorized($0) }
+        guard !missingPaths.isEmpty else { return }
+        appendTerminalLine("命令可能需要访问以下路径，请在弹出的授权面板中选择对应文件或上级文件夹：\n\(missingPaths.joined(separator: "\n"))", kind: .system, to: selectedTerminalID)
+        requestAccessForPaths(missingPaths)
+    }
+
+    private func requestAccessForPaths(_ paths: [String]) {
+        for path in compactAuthorizationTargets(paths) {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = "授权访问"
+            panel.directoryURL = suggestedAuthorizationDirectory(for: path)
+            panel.message = "请选择此命令需要访问的文件或上级文件夹：\n\(path)"
+            if panel.runModal() == .OK, let url = panel.url {
+                authorize(url: url, saveAsWorkspace: false)
+            }
+        }
+        persistSettings()
+    }
+
+    private func terminalPathsNeedingAuthorization(in commandLine: String) -> [String] {
+        let pattern = #"(?:'([^']+/[^']*)'|\"([^\"]+/[^\"]*)\"|(?<![\w.-])(/[^\s;&|><`]+))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let nsRange = NSRange(commandLine.startIndex..<commandLine.endIndex, in: commandLine)
+        var paths: [String] = []
+        for match in regex.matches(in: commandLine, range: nsRange) {
+            for index in 1..<match.numberOfRanges where match.range(at: index).location != NSNotFound {
+                guard let range = Range(match.range(at: index), in: commandLine) else { continue }
+                var value = String(commandLine[range])
+                value = value.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                value = value.replacingOccurrences(of: "\\ ", with: " ")
+                if value.hasPrefix("/"), !value.hasPrefix("/usr/"), !value.hasPrefix("/bin/"), !value.hasPrefix("/sbin/"), !value.hasPrefix("/opt/homebrew/") {
+                    paths.append(value)
+                }
+            }
+        }
+        return Array(Set(paths)).sorted()
+    }
+
+    private func isPathAuthorized(_ path: String) -> Bool {
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if let workspacePath = workspaceURL?.path, standardizedPath == workspacePath || standardizedPath.hasPrefix(workspacePath + "/") { return true }
+        return activeSecurityScopedURLs.contains { url in
+            let authorizedPath = url.standardizedFileURL.path
+            return standardizedPath == authorizedPath || standardizedPath.hasPrefix(authorizedPath + "/")
+        }
+    }
+
+    private func compactAuthorizationTargets(_ paths: [String]) -> [String] {
+        var targets: [String] = []
+        for path in paths.sorted() {
+            if targets.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) { continue }
+            targets.append(path)
+        }
+        return targets
+    }
+
+    private func suggestedAuthorizationDirectory(for path: String) -> URL? {
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        if FileManager.default.fileExists(atPath: url.path) {
+            return url.deletingLastPathComponent()
+        }
+        return url.deletingLastPathComponent()
+    }
+
+    private func persistConversations() {
+        save(conversations, key: Self.conversationsKey)
+    }
+
+    private func save<T: Encodable>(_ value: T, key: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private static func load<T: Decodable>(key: String) -> T? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+struct TerminalApprovalRequest: Identifiable {
+    let id = UUID()
+    let command: String
+    let args: [String]
+    let workingDirectory: String
+    let completion: (Bool) -> Void
+
+    var displayCommand: String {
+        ([command] + args).map { value in
+            value.contains(" ") ? "\"\(value)\"" : value
+        }.joined(separator: " ")
+    }
+
+    func approve() { completion(true) }
+    func deny() { completion(false) }
+}
