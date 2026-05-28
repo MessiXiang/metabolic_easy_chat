@@ -19,6 +19,15 @@ struct AppBackground: View {
         ZStack {
             Color(red: 0.97, green: 0.975, blue: 0.99)
 
+            backgroundGradient
+        }
+        .ignoresSafeArea()
+        .drawingGroup()
+    }
+
+    @ViewBuilder
+    private var backgroundGradient: some View {
+        if #available(macOS 15.0, *) {
             MeshGradient(width: 3, height: 3, points: [
                 [0, 0], [0.5, 0], [1, 0],
                 [0, 0.5], [0.5, 0.5], [1, 0.5],
@@ -35,9 +44,18 @@ struct AppBackground: View {
                 Color(red: 0.98, green: 0.97, blue: 0.97)
             ])
             .opacity(0.9)
+        } else {
+            ZStack {
+                LinearGradient(colors: [
+                    Color(red: 0.94, green: 0.96, blue: 1.0),
+                    Color(red: 0.99, green: 0.97, blue: 0.96)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [DesignToken.cyan.opacity(0.14), .clear], center: .topLeading, startRadius: 20, endRadius: 520)
+                RadialGradient(colors: [DesignToken.rose.opacity(0.10), .clear], center: .bottomTrailing, startRadius: 20, endRadius: 560)
+                RadialGradient(colors: [DesignToken.mint.opacity(0.10), .clear], center: .bottomLeading, startRadius: 40, endRadius: 480)
+            }
+            .opacity(0.9)
         }
-        .ignoresSafeArea()
-        .drawingGroup()
     }
 }
 
