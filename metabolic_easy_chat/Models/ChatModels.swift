@@ -333,6 +333,32 @@ struct TerminalScreen: Hashable {
     }
 }
 
+@propertyWrapper
+struct DefaultEmptyString: Codable, Equatable, Hashable {
+    var wrappedValue: String
+
+    init(wrappedValue: String = "") {
+        self.wrappedValue = wrappedValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        wrappedValue = (try? container.decode(String.self)) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(wrappedValue)
+    }
+}
+
+extension KeyedDecodingContainer {
+    func decode(_ type: DefaultEmptyString.Type, forKey key: Key) throws -> DefaultEmptyString {
+        try decodeIfPresent(type, forKey: key) ?? DefaultEmptyString()
+    }
+}
+
+
 enum TerminalLineKind: String, Codable, Hashable {
     case input
     case output
@@ -378,6 +404,7 @@ struct ProviderSettings: Codable, Equatable {
     var maxToolRounds = 8
     var enableStreaming = true
     var yoloMode = false
+    @DefaultEmptyString var githubToken = ""
     var metabolismSession: MetabolismSession?
 }
 

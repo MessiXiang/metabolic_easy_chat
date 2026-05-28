@@ -386,22 +386,38 @@ final class ChatViewModel: ObservableObject {
         let originalWorkspacePath = settings.workspacePath
         let originalWorkspaceBookmark = settings.workspaceBookmark
         let environment = terminalEnvironment()
-        let fallbackUser = NSUserName().replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
         let random = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8).lowercased()
 
-        let ghPathResult = await terminalService.run(command: "/usr/bin/env", args: ["zsh", "-lc", "command -v gh"], workingDirectory: workspaceURL, environment: environment, timeout: 8) { _ in }
-        let hasGH = ghPathResult.status == .completed && !ghPathResult.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-        let ghUser: String
-        var isGitHubReady = false
-        if hasGH {
-            let authResult = await terminalService.run(command: "/usr/bin/env", args: ["zsh", "-lc", "gh auth status -h github.com >/dev/null 2>&1 && gh api user --jq .login"], workingDirectory: workspaceURL, environment: environment, timeout: 12) { _ in }
-            let login = authResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            isGitHubReady = authResult.status == .completed && !login.isEmpty
-            ghUser = isGitHubReady ? login : fallbackUser
-        } else {
-            ghUser = fallbackUser
+        let ghVersionResult = await terminalService.run(command: "/usr/bin/env", args: ["zsh", "-lc", "gh --version"], workingDirectory: workspaceURL, environment: environment, timeout: 8) { _ in }
+        if ghVersionResult.status != .completed {
+            let installTerminalID = createTerminal(title: "install gh", command: "/bin/zsh", args: ["-lc", "brew install gh"], workingDirectory: workspaceURL, environment: environment, startImmediately: false)
+            appendTerminalLine("未检测到 GitHub CLI（gh --version 失败），正在运行：brew install gh", kind: .system, to: installTerminalID)
+            let installResult = await runProcess(command: "/bin/zsh", args: ["-lc", "brew install gh"], workingDirectory: workspaceURL, environment: environment, timeout: 600, terminalID: installTerminalID) { _ in }
+            guard installResult.status == .completed else {
+                showAlert("未检测到 gh，且 brew install gh 安装失败。请查看终端输出后重试。")
+                return
+            }
         }
+
+        let token = settings.githubToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            showAlert("请先在设置 → Built-in Tools 中填写 GitHub Token。\n\n获取链接：https://github.com/settings/tokens\n\n建议至少授予 repo 权限。")
+            return
+        }
+
+        let ghLoginCheck = "printf %s \(shellQuote(token)) | gh auth login --hostname github.com --with-token && gh auth status -h github.com && gh api user --jq .login"
+        let ghAuthTerminalID = createTerminal(title: "gh auth", command: "/bin/zsh", args: ["-lc", "gh auth login --hostname github.com --with-token && gh auth status -h github.com && gh api user --jq .login"], workingDirectory: workspaceURL, environment: environment, startImmediately: false)
+        appendTerminalLine("正在使用设置中的 GitHub Token 登录 gh，并检查 gh auth status 权限。", kind: .system, to: ghAuthTerminalID)
+        let authResult = await runProcess(command: "/bin/zsh", args: ["-lc", ghLoginCheck], workingDirectory: workspaceURL, environment: environment, timeout: 60, terminalID: ghAuthTerminalID) { _ in }
+        let loginLines = authResult.output
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard authResult.status == .completed, let ghUser = loginLines.last else {
+            showAlert("gh 登录或权限检查失败。请确认设置中的 GitHub Token 有足够权限后重试。\n\n获取链接：https://github.com/settings/tokens\n\n建议至少授予 repo 权限。")
+            return
+        }
+        let isGitHubReady = true
 
         let branchName = "\(ghUser)_\(random)"
 
@@ -427,15 +443,7 @@ final class ChatViewModel: ObservableObject {
             persistSettings()
             refreshWorkspaceFiles()
 
-            if hasGH && isGitHubReady {
-                appendTerminalLine("已进入新陈代谢模式。gh 已登录 GitHub，提交后可自动创建 PR。", kind: .system, to: terminalID)
-            } else if hasGH {
-                openGitHubLoginTerminal(workingDirectory: cloneURL, missingGH: false)
-                showAlert("已进入新陈代谢工作区，但 gh 尚未登录。请在弹出的终端中用 Personal Access Token 登录 GitHub。")
-            } else {
-                openGitHubLoginTerminal(workingDirectory: cloneURL, missingGH: true)
-                showAlert("已进入新陈代谢工作区，但未找到 gh 命令。请在弹出的终端中先安装 gh，再用 Personal Access Token 登录 GitHub。")
-            }
+            appendTerminalLine("已进入新陈代谢模式。gh 已安装并用设置中的 GitHub Token 登录，提交后可自动创建 PR。", kind: .system, to: terminalID)
         } catch {
             showAlert("启动新陈代谢失败：\(error.localizedDescription)")
         }
