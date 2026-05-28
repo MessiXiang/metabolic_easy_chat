@@ -1,7 +1,6 @@
 import Sparkle
 import SwiftUI
 
-@MainActor
 final class AppUpdateController: NSObject, ObservableObject {
     let updaterController: SPUStandardUpdaterController
 
@@ -14,13 +13,14 @@ final class AppUpdateController: NSObject, ObservableObject {
         super.init()
     }
 
+    @MainActor
     func checkForUpdates() {
         updaterController.checkForUpdates(nil)
     }
 }
 
 private struct AppUpdateControllerKey: EnvironmentKey {
-    @MainActor static let defaultValue = AppUpdateController()
+    static let defaultValue = AppUpdateController()
 }
 
 extension EnvironmentValues {

@@ -413,7 +413,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         appendTerminalLine("正在使用设置中的 GitHub Token 登录 gh，并检查仓库访问权限。", kind: .system, to: setupTerminalID)
-        let loginCommand = "printf %s \\(shellQuote(githubToken)) | gh auth login -h github.com --with-token >/dev/null 2>&1 || true; gh auth status -h github.com && gh api user --jq .login && gh api repos/MessiXiang/metabolic_easy_chat >/dev/null"
+        let loginCommand = "printf %s \(shellQuote(githubToken)) | gh auth login -h github.com --with-token >/dev/null 2>&1 || true; gh auth status -h github.com && gh api user --jq .login && gh api repos/MessiXiang/metabolic_easy_chat >/dev/null"
         let authResult = await runProcess(command: "/usr/bin/env", args: ["zsh", "-lc", loginCommand], workingDirectory: workspaceURL, environment: environment, timeout: 60, terminalID: setupTerminalID) { _ in }
         let authLines = authResult.output
             .split(separator: "\n")

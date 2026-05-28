@@ -84,9 +84,8 @@ final class WorkspaceTerminalService {
         await withCheckedContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
-            let resumeLock = NSLock()
+            let resumeGate = ContinuationGate()
             let output = LockedTextBuffer(limit: 40_000)
-            var didResume = false
 
             @Sendable func snapshot(_ extra: String = "") -> String {
                 output.snapshot(appending: extra)
@@ -98,13 +97,7 @@ final class WorkspaceTerminalService {
             }
 
             @Sendable func finish(status: ToolRunStatus, exitCode: Int32, extraOutput: String = "") {
-                resumeLock.lock()
-                guard !didResume else {
-                    resumeLock.unlock()
-                    return
-                }
-                didResume = true
-                resumeLock.unlock()
+                guard resumeGate.tryResume() else { return }
                 pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(returning: TerminalExecutionResult(output: snapshot(extraOutput), status: status, exitCode: exitCode))
             }
@@ -159,6 +152,19 @@ final class WorkspaceTerminalService {
 
     private static func text(from data: Data) -> String? {
         String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    }
+}
+
+private final class ContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func tryResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !didResume else { return false }
+        didResume = true
+        return true
     }
 }
 
