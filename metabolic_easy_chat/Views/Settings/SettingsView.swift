@@ -237,6 +237,16 @@ struct ProviderSettingsPanel: View {
             TextField("绘图模型", text: $viewModel.settings.imageModel).textFieldStyle(.roundedBorder)
         }
 
+        SettingsCard(title: "GitHub CLI", subtitle: "用于新陈代谢模式自动登录 gh、推送分支和创建 PR。") {
+            SecureField("GitHub Personal Access Token", text: $viewModel.settings.githubToken)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: viewModel.settings.githubToken) { _, _ in viewModel.persistSettings() }
+            Text("Token 至少需要 repo 权限。获取链接：https://github.com/settings/tokens")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+
         SettingsCard(title: "端点路径", subtitle: "适配第三方兼容提供商。") {
             TextField("模型列表路径", text: $viewModel.settings.modelsPath).textFieldStyle(.roundedBorder)
             TextField("Responses 路径", text: $viewModel.settings.responsesPath).textFieldStyle(.roundedBorder)
@@ -432,6 +442,4 @@ struct SkillRow: View {
         }
         .padding(14)
         .background(Color(red: 0.99, green: 0.98, blue: 0.95), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(DesignToken.border))
-    }
-}
+        .overlay(Roun

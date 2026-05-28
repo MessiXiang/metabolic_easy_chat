@@ -343,6 +343,7 @@ enum TerminalLineKind: String, Codable, Hashable {
 struct ProviderSettings: Codable, Equatable {
     var baseURL = "https://api.openai.com"
     var apiKey = ""
+    var githubToken = ""
     var availableModels: [String] = ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "o4-mini"]
     var chatModel = "gpt-4.1-mini"
     var imageModel = "gpt-image-1"
