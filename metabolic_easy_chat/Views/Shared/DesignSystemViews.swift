@@ -44,10 +44,13 @@ struct AppBackground: View {
 struct SidebarView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Binding var isWorkspacePanelCollapsed: Bool
+    @Environment(\.appUpdateController) private var appUpdateController
 
     var body: some View {
         VStack(spacing: 16) {
-            BrandHeroCard(isMetabolismActive: viewModel.isMetabolismModeActive)
+            BrandHeroCard(isMetabolismActive: viewModel.isMetabolismModeActive) {
+                appUpdateController.checkForUpdates()
+            }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
 
@@ -146,10 +149,11 @@ struct SidebarView: View {
 
 struct BrandHeroCard: View {
     var isMetabolismActive = false
+    var onCheckUpdates: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(
@@ -165,6 +169,18 @@ struct BrandHeroCard: View {
                 }
                 .frame(width: 50, height: 50)
                 .shadow(color: DesignToken.blue.opacity(0.20), radius: 12, y: 6)
+                if let onCheckUpdates {
+                    Button(action: onCheckUpdates) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(DesignToken.blue)
+                            .frame(width: 34, height: 34)
+                            .background(Color.white.opacity(0.82), in: Circle())
+                            .overlay(Circle().stroke(DesignToken.border.opacity(0.8), lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("检查更新")
+                }
                 Spacer()
             }
             VStack(alignment: .leading, spacing: 4) {
