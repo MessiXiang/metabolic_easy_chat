@@ -117,7 +117,7 @@ struct SidebarView: View {
                     Button {
                         Task { await viewModel.startMetabolismMode() }
                     } label: {
-                        Label(viewModel.isMetabolismWorking ? "新陈代谢中…" : "EasyChat新陈代谢", systemImage: "arrow.triangle.2.circlepath")
+                        Label(viewModel.isMetabolismWorking ? "更新中…" : "更新", systemImage: "arrow.triangle.2.circlepath")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .font(.callout.weight(.medium))
                     }
