@@ -12,7 +12,7 @@ struct metabolic_easy_chatApp: App {
     @StateObject private var appUpdateController = AppUpdateController()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("EasyChat-新陈代谢") {
             ContentView()
                 .environment(\.appUpdateController, appUpdateController)
         }
