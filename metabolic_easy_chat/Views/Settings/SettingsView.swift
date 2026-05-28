@@ -78,6 +78,13 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(DesignToken.rose)
                 }
+                SecureField("GitHub Token（用于 gh 登录 / 新陈代谢 PR）", text: $viewModel.settings.githubToken)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: viewModel.settings.githubToken) { _, _ in viewModel.persistSettings() }
+                Text("新陈代谢模式会先检测 gh --version；未安装时自动在终端运行 brew install gh。Token 可在 https://github.com/settings/tokens 获取，建议至少授予 repo 权限。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Stepper("超时时间：\(viewModel.settings.builtinToolTimeout) 秒", value: $viewModel.settings.builtinToolTimeout, in: 3...120, step: 1)
                     .onChange(of: viewModel.settings.builtinToolTimeout) { _, _ in viewModel.persistSettings() }
                 Stepper("连续工具调用轮数：\(viewModel.settings.maxToolRounds)", value: $viewModel.settings.maxToolRounds, in: 0...100, step: 1)
