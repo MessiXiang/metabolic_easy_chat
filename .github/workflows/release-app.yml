@@ -27,6 +27,19 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          CODE_SIGNING_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="")
+          if [[ -n "${MACOS_CERTIFICATE_P12:-}" && -n "${MACOS_CERTIFICATE_PASSWORD:-}" ]]; then
+            KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+            CERTIFICATE_PATH="$RUNNER_TEMP/app-signing.p12"
+            printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERTIFICATE_PATH"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            security list-keychain -d user -s "$KEYCHAIN_PATH"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            CODE_SIGNING_ARGS=(CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY="Apple Development" DEVELOPMENT_TEAM="G78YGD8GUU")
+          fi
           xcodebuild \
             -project metabolic_easy_chat.xcodeproj \
             -scheme metabolic_easy_chat \
@@ -34,10 +47,12 @@ jobs:
             -derivedDataPath build/DerivedData \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             SPARKLE_PUBLIC_ED_KEY="${{ secrets.SPARKLE_PUBLIC_ED_KEY }}" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            "${CODE_SIGNING_ARGS[@]}" \
             build
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Package app zip
         run: |
@@ -69,7 +84,14 @@ jobs:
               echo "Sparkle sign_update tool was not found." >&2
               exit 1
             fi
-            SIGNATURE="$($SIGN_UPDATE --ed-key-file <(printf '%s' "$SPARKLE_PRIVATE_ED_KEY") build/release/metabolic_easy_chat.zip | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+            SIGNATURE="$(printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$SIGN_UPDATE" --ed-key-file - build/release/metabolic_easy_chat.zip | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+            if [[ -z "$SIGNATURE" ]]; then
+              echo "Sparkle signature was empty." >&2
+              exit 1
+            fi
+            printf '%s' "$SPARKLE_PRIVATE_ED_KEY" > build/release/sparkle_private_key.txt
+            "$SIGN_UPDATE" --verify --ed-key-file build/release/sparkle_private_key.txt build/release/metabolic_easy_chat.zip "$SIGNATURE"
+            rm -f build/release/sparkle_private_key.txt
           fi
           echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
 
