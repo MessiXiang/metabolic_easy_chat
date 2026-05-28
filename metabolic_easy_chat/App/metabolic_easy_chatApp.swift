@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct metabolic_easy_chatApp: App {
+    @StateObject private var appUpdateController = AppUpdateController()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.appUpdateController, appUpdateController)
         }
     }
 }

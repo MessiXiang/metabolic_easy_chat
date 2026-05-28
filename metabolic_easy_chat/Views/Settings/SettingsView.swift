@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appUpdateController) private var appUpdateController
     @State private var selectedSection: SettingsSection = .provider
 
     var body: some View {
@@ -102,6 +103,26 @@ struct SettingsView: View {
             MCPSettingsPanel(viewModel: viewModel)
         case .skills:
             SkillsSettingsPanel(viewModel: viewModel)
+        case .updates:
+            SettingsCard(title: "自动更新", subtitle: "从 GitHub Release 获取 main 分支最新构建，并用 Sparkle 安全替换本地 App。") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        appUpdateController.checkForUpdates()
+                    } label: {
+                        Label("检查更新", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Text("更新源：https://messixiang.github.io/metabolic_easy_chat/appcast.xml")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Text("PR 合并到 main 后，GitHub Actions 会构建 App、更新 latest Release，并发布 appcast.xml。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
@@ -112,6 +133,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case localTools
     case mcp
     case skills
+    case updates
 
     var id: String { rawValue }
 
@@ -122,6 +144,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .localTools: "Built-in Tools"
         case .mcp: "MCP Servers"
         case .skills: "Skills"
+        case .updates: "Updates"
         }
     }
 
@@ -132,6 +155,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .localTools: "terminal"
         case .mcp: "server.rack"
         case .skills: "sparkles"
+        case .updates: "arrow.triangle.2.circlepath"
         }
     }
 }

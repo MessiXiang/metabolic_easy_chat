@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>metabolic_easy_chat Appcast</title>
+    <description>Updates for metabolic_easy_chat. GitHub Actions will replace this file after the next main build.</description>
+    <language>zh-CN</language>
+  </channel>
+</rss>
