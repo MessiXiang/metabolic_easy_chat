@@ -442,3 +442,8 @@ enum ChatError: LocalizedError {
         }
     }
 }
+
+struct ConversationExport: Codable {
+    let conversation: Conversation
+    let exportedAt: Date
+}

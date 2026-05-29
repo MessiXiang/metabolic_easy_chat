@@ -51,6 +51,11 @@ final class ChatViewModel: ObservableObject {
 
     private static let conversationsKey = "metabolic_easy_chat.conversations"
     private static let settingsKey = "metabolic_easy_chat.providerSettings"
+    private static let exportTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
 
     init() {
         settings = Self.load(key: Self.settingsKey) ?? ProviderSettings()
@@ -123,6 +128,36 @@ final class ChatViewModel: ObservableObject {
         conversations[index].messages.removeAll { $0.id == message.id }
         conversations[index].updatedAt = Date()
         persistConversations()
+    }
+
+    func exportSelectedConversation() {
+        guard let conversation = selectedConversation else {
+            showAlert("当前没有可导出的对话。")
+            return
+        }
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let export = ConversationExport(conversation: conversation, exportedAt: Date())
+            let data = try encoder.encode(export)
+            let filename = "\(safeExportFilename(from: conversation.title))-\(Self.exportTimestampFormatter.string(from: Date())).json"
+
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.canCreateDirectories = true
+            panel.nameFieldStringValue = filename
+            panel.title = "导出对话"
+            panel.message = "选择保存当前对话 JSON 文件的位置。"
+
+            if panel.runModal() == .OK, let url = panel.url {
+                try data.write(to: url, options: .atomic)
+                showAlert("对话已导出到：\n\(url.path)")
+            }
+        } catch {
+            showAlert("导出对话失败：\(error.localizedDescription)")
+        }
     }
 
     func startEditingMessage(_ message: ChatMessage) {
@@ -1255,6 +1290,13 @@ final class ChatViewModel: ObservableObject {
     private func showAlert(_ message: String) {
         alertMessage = message
         isShowingAlert = true
+    }
+
+    private func safeExportFilename(from title: String) -> String {
+        let invalidCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+        let sanitized = title.components(separatedBy: invalidCharacters).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "conversation" : String(sanitized.prefix(64))
     }
 
     private func mimeType(for url: URL) -> String {
