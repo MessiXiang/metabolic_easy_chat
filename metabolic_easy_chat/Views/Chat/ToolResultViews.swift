@@ -145,7 +145,8 @@ struct MessageActionBar: View {
                     Label("编辑", systemImage: "pencil")
                         .labelStyle(.iconOnly)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .help("编辑此消息并重新生成")
             }
 
@@ -155,7 +156,8 @@ struct MessageActionBar: View {
                 Label("复制", systemImage: "doc.on.doc")
                     .labelStyle(.iconOnly)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .help("复制整条消息内容")
 
             Button {
@@ -164,7 +166,8 @@ struct MessageActionBar: View {
                 Label("重新生成", systemImage: "arrow.clockwise")
                     .labelStyle(.iconOnly)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .help(message.role == .user ? "从这条用户消息重新生成，并移除后续分支" : "重新生成这条 AI 回复，并移除后续分支")
 
             Button(role: .destructive) {
@@ -173,7 +176,8 @@ struct MessageActionBar: View {
                 Label("删除", systemImage: "trash")
                     .labelStyle(.iconOnly)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
             .help("从当前对话上下文中删除这条消息")
 
             if let tokenCount = message.tokenCount {

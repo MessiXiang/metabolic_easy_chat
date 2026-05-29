@@ -216,6 +216,7 @@ struct CollapsedIntermediateBubble: View {
 
 struct MessageEditView: View {
     @ObservedObject var viewModel: ChatViewModel
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -225,6 +226,16 @@ struct MessageEditView: View {
                 Text("编辑消息")
                     .font(.caption.bold())
                 Spacer()
+                Button {
+                    editorFocused = false
+                    viewModel.cancelEditing()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .buttonStyle(.borderless)
+                .help("取消编辑")
+                .keyboardShortcut(.escape, modifiers: [])
             }
             TextEditor(text: $viewModel.editingText)
                 .font(.body)
@@ -233,13 +244,22 @@ struct MessageEditView: View {
                 .padding(10)
                 .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(DesignToken.border))
+                .focused($editorFocused)
+                .onAppear {
+                    editorFocused = true
+                }
             HStack {
                 Spacer()
-                Button("取消") { viewModel.cancelEditing() }
+                Button("取消", role: .cancel) {
+                    editorFocused = false
+                    viewModel.cancelEditing()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
                 Button("保存并重新生成") { Task { await viewModel.submitEdit() } }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignToken.blue)
                     .disabled(viewModel.editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.return, modifiers: [.command])
             }
         }
         .padding(18)
@@ -247,6 +267,10 @@ struct MessageEditView: View {
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(DesignToken.blue.opacity(0.40)))
         .shadow(color: DesignToken.shadow, radius: 18, y: 10)
         .padding(.horizontal, 24)
+        .onExitCommand {
+            editorFocused = false
+            viewModel.cancelEditing()
+        }
     }
 }
 
@@ -460,231 +484,4 @@ struct ImageBubble: View {
             if let sourceURL = image.sourceURL {
                 Text(sourceURL)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-            }
-        }
-    }
-
-    private func copyImage(_ nsImage: NSImage) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([nsImage])
-    }
-
-    private func saveImage(_ nsImage: NSImage) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = image.sourceURL ?? "image.png"
-        if panel.runModal() == .OK, let url = panel.url {
-            guard let tiffData = nsImage.tiffRepresentation,
-                  let rep = NSBitmapImageRep(data: tiffData),
-                  let pngData = rep.representation(using: .png, properties: [:]) else { return }
-            try? pngData.write(to: url)
-        }
-    }
-}
-
-struct DiffPreviewView: View {
-    let diffs: [FileDiffHunk]
-    let messageID: ChatMessage.ID
-    let onApply: (FileDiffHunk) -> Void
-    let onRevert: (FileDiffHunk) -> Void
-
-    var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(diffs) { diff in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: diff.isApplied ? "checkmark.circle.fill" : "doc.badge.gearshape")
-                                .foregroundStyle(diff.isApplied ? DesignToken.mint : DesignToken.orange)
-                            Text(diff.filePath)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            if diff.isApplied {
-                                Button("回滚") { onRevert(diff) }
-                                    .font(.caption.weight(.semibold))
-                                    .buttonStyle(.borderless)
-                                    .foregroundStyle(DesignToken.rose)
-                            } else {
-                                Button("应用") { onApply(diff) }
-                                    .font(.caption.weight(.semibold))
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                            }
-                        }
-                        SimpleDiffView(oldContent: diff.oldContent, newContent: diff.newContent)
-                    }
-                    .padding(10)
-                    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border))
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.badge.gearshape")
-                    .foregroundStyle(DesignToken.orange)
-                Text("文件变更 \(diffs.filter(\.isApplied).count)/\(diffs.count) 已应用")
-                    .font(.caption.weight(.bold))
-                Spacer()
-            }
-            .padding(10)
-            .background(DesignToken.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-    }
-}
-
-struct SimpleDiffView: View {
-    let oldContent: String
-    let newContent: String
-
-    var body: some View {
-        let diffLines = computeDiffLines()
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(diffLines.prefix(60).enumerated()), id: \.offset) { _, line in
-                    Text(line.text)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(line.color)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(line.background)
-                }
-                if diffLines.count > 60 {
-                    Text("… 省略 \(diffLines.count - 60) 行")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(6)
-                }
-            }
-        }
-        .frame(maxHeight: 200)
-        .background(Color(red: 0.97, green: 0.97, blue: 0.98), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private struct DiffLine {
-        let text: String
-        let color: Color
-        let background: Color
-    }
-
-    private func computeDiffLines() -> [DiffLine] {
-        let oldLines = oldContent.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let newLines = newContent.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var result: [DiffLine] = []
-        let oldSet = Set(oldLines)
-        let newSet = Set(newLines)
-        for line in oldLines where !newSet.contains(line) {
-            result.append(DiffLine(text: "- \(line)", color: DesignToken.rose, background: DesignToken.rose.opacity(0.08)))
-        }
-        for line in newLines where !oldSet.contains(line) {
-            result.append(DiffLine(text: "+ \(line)", color: Color(red: 0.1, green: 0.6, blue: 0.3), background: Color.green.opacity(0.08)))
-        }
-        if result.isEmpty {
-            result.append(DiffLine(text: "（无差异或差异过复杂，请对比原文件）", color: .secondary, background: .clear))
-        }
-        return result
-    }
-}
-
-private extension ChatMessage {
-    var copyText: String {
-        var sections: [String] = []
-        if !text.isEmpty { sections.append(text) }
-        if !images.isEmpty {
-            let imageText = images.enumerated().map { index, image in
-                "图片 \(index + 1)：\(image.sourceURL ?? image.mimeType)"
-            }.joined(separator: "\n")
-            sections.append(imageText)
-        }
-        if !attachments.isEmpty {
-            let attachmentText = attachments.map { attachment in
-                "附件：\(attachment.name)\n类型：\(attachment.mimeType)\n大小：\(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))\(attachment.textPreview.map { "\n文本预览：\n\($0)" } ?? "")"
-            }.joined(separator: "\n\n")
-            sections.append(attachmentText)
-        }
-        if !toolRuns.isEmpty {
-            let toolText = toolRuns.map { run in
-                "工具：\(run.title)\n状态：\(run.status.rawValue)\n\(run.output)"
-            }.joined(separator: "\n\n")
-            sections.append(toolText)
-        }
-        return sections.joined(separator: "\n\n---\n\n")
-    }
-}
-
-struct ToolRequestBubble: View {
-    let invocation: ToolInvocation
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: iconName)
-                .font(.system(size: 10))
-                .foregroundStyle(iconColor)
-            Text(displayName)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(DesignToken.muted)
-            Text(summary.prefix(50) + (summary.count > 50 ? "…" : ""))
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(iconColor.opacity(0.05), in: Capsule())
-    }
-
-    private static let toolService = ToolInvocationService(settings: ProviderSettings())
-
-    private var displayName: String {
-        Self.toolService.definition(named: invocation.name)?.displayName ?? invocation.name
-    }
-
-    private var summary: String {
-        let input = invocation.input
-        switch invocation.name {
-        case "read_file", "view", "write_file", "create_file", "create", "replace_string", "insert":
-            return input.path ?? ""
-        case "terminal":
-            return ([input.command].compactMap { $0 } + (input.args ?? [])).joined(separator: " ")
-        case "web_search", "think", "report_progress", "task_complete":
-            return input.query ?? input.content ?? ""
-        case "fetch_url", "url_to_markdown", "extract_links":
-            return input.url ?? ""
-        case "fetch_urls":
-            return "\(input.urls?.count ?? 0) 个 URL"
-        case "glob", "grep":
-            return input.pattern ?? input.query ?? ""
-        case "load_skill":
-            return input.skill ?? ""
-        default:
-            return invocation.rawJSON
-        }
-    }
-
-    private var iconName: String {
-        switch invocation.name {
-        case "terminal": "terminal"
-        case "read_file", "view", "write_file", "create_file", "create", "replace_string", "insert": "doc.text"
-        case "web_search", "fetch_url", "fetch_urls", "url_to_markdown", "extract_links": "globe"
-        case "load_skill": "sparkles"
-        default: "wrench.and.screwdriver"
-        }
-    }
-
-    private var iconColor: Color {
-        switch invocation.name {
-        case "terminal": DesignToken.orange
-        case "web_search", "fetch_url", "fetch_urls", "url_to_markdown", "extract_links": DesignToken.cyan
-        case "load_skill": DesignToken.lilac
-        default: DesignToken.blue
-        }
-    }
-}
-
+          
