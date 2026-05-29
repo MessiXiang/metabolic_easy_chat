@@ -31,6 +31,7 @@ struct MessageListView: View {
                                     Task { await viewModel.regenerate(from: message) }
                                 },
                                 onEdit: { viewModel.startEditingMessage(message) },
+                                onExportConversation: { viewModel.exportSelectedConversation() },
                                 onApplyDiff: { diff in viewModel.applyDiff(diff, in: message.id) },
                                 onRevertDiff: { diff in viewModel.revertDiff(diff, in: message.id) }
                             )
@@ -329,6 +330,7 @@ struct MessageBubble: View {
     let onDelete: () -> Void
     let onRegenerate: () -> Void
     let onEdit: () -> Void
+    let onExportConversation: () -> Void
     let onApplyDiff: (FileDiffHunk) -> Void
     let onRevertDiff: (FileDiffHunk) -> Void
     @State private var appeared = false
@@ -408,6 +410,8 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 24)
         .contextMenu {
+            Button("导出当前对话…") { onExportConversation() }
+            Divider()
             Button("编辑") { onEdit() }
             Button("重新生成") { onRegenerate() }
             Button("删除", role: .destructive) { onDelete() }
