@@ -1,8 +1,14 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct MessageListView: View {
     @ObservedObject var viewModel: ChatViewModel
+    @State private var renderRefreshID = UUID()
+
+    private func refreshMessages() {
+        renderRefreshID = UUID()
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -30,7 +36,10 @@ struct MessageListView: View {
                                 onRegenerate: {
                                     Task { await viewModel.regenerate(from: message) }
                                 },
-                                onEdit: { viewModel.startEditingMessage(message) },
+                                onEdit: {
+                                    viewModel.startEditingMessage(message)
+                                    refreshMessages()
+                                },
                                 onExportConversation: { viewModel.exportSelectedConversation() },
                                 onApplyDiff: { diff in viewModel.applyDiff(diff, in: message.id) },
                                 onRevertDiff: { diff in viewModel.revertDiff(diff, in: message.id) }
@@ -48,6 +57,7 @@ struct MessageListView: View {
                     }
                 }
                 .padding(.vertical, 24)
+                .id(renderRefreshID)
                 .frame(maxWidth: 980)
                 .frame(maxWidth: .infinity)
             }
@@ -64,6 +74,9 @@ struct MessageListView: View {
                 if newValue.count % 40 < 4 || newValue.hasSuffix("\n") {
                     proxy.scrollTo("streaming-bottom", anchor: .bottom)
                 }
+            }
+            .onChange(of: viewModel.editingMessageID) { _, _ in
+                refreshMessages()
             }
         }
     }
@@ -252,7 +265,7 @@ struct MessageEditView: View {
                 Spacer()
                 Button("取消", role: .cancel) {
                     editorFocused = false
-                    viewModel.cancelEditing()
+                    DispatchQueue.main.async { viewModel.cancelEditing() }
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 Button("保存并重新生成") { Task { await viewModel.submitEdit() } }
@@ -269,7 +282,7 @@ struct MessageEditView: View {
         .padding(.horizontal, 24)
         .onExitCommand {
             editorFocused = false
-            viewModel.cancelEditing()
+            DispatchQueue.main.async { viewModel.cancelEditing() }
         }
     }
 }
@@ -459,7 +472,7 @@ struct MessageBubble: View {
     private func copyMessage() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(message.copyText, forType: .string)
+        pasteboard.setString(message.text, forType: .string)
     }
 }
 
@@ -481,7 +494,111 @@ struct ImageBubble: View {
                         Button("保存图片…") { saveImage(nsImage) }
                     }
             }
+
             if let sourceURL = image.sourceURL {
                 Text(sourceURL)
                     .font(.caption2)
-          
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if let revisedPrompt = image.revisedPrompt, !revisedPrompt.isEmpty {
+                Text(revisedPrompt)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+        }
+    }
+
+    private func copyImage(_ image: NSImage) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+    }
+
+    private func saveImage(_ image: NSImage) {
+        guard let data = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: data),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "generated-image.png"
+        if panel.runModal() == .OK, let url = panel.url {
+            try? pngData.write(to: url)
+        }
+    }
+}
+
+struct ToolRequestBubble: View {
+    let invocation: ToolInvocation
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "hammer.circle.fill")
+                .foregroundStyle(DesignToken.blue)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(invocation.name)
+                    .font(.caption.bold())
+                    .foregroundStyle(DesignToken.ink)
+                Text(String(describing: invocation))
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+struct DiffPreviewView: View {
+    let diffs: [FileDiffHunk]
+    let messageID: UUID
+    let onApply: (FileDiffHunk) -> Void
+    let onRevert: (FileDiffHunk) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .foregroundStyle(DesignToken.blue)
+                Text("文件改动")
+                    .font(.caption.bold())
+                Spacer()
+            }
+            ForEach(diffs) { diff in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(diff.filePath)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Spacer()
+                        if diff.isApplied {
+                            Button("撤销") { onRevert(diff) }
+                                .buttonStyle(.borderless)
+                        } else {
+                            Button("应用") { onApply(diff) }
+                                .buttonStyle(.borderless)
+                                .disabled(diff.isTruncated)
+                        }
+                    }
+                    Text(diff.newContent)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(8)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(DesignToken.border.opacity(0.7)))
+            }
+        }
+        .padding(12)
+        .background(Color.gray.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
